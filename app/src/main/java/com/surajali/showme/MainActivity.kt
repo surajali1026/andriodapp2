@@ -252,7 +252,13 @@ class MainActivity : Activity() {
         val index = priceColumn("INDEX PRICE", "Index", current?.indexPrice ?: "--")
         lastPriceView = last.second; markPriceView = mark.second; indexPriceView = index.second
         listOf(last.first, mark.first, index.first).forEach { line.addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
-        prices.addView(line); body.addView(prices); gap(body, 8)
+        prices.addView(line); body.addView(prices)
+        countdownView = txt("00:00", 10f, Color.rgb(255, 209, 102), true).apply {
+            gravity = Gravity.END
+            setPadding(0, dp(3), dp(6), dp(3))
+        }
+        body.addView(countdownView!!)
+        gap(body, 3)
         val tf = LinearLayout(this).apply { orientation = 0 }
         val tfScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -277,9 +283,7 @@ class MainActivity : Activity() {
             setPadding(dp(10), 0, dp(10), 0)
             setOnClickListener { customTimeframeDialog() }
         }, LinearLayout.LayoutParams(-2, dp(36)))
-        body.addView(tfScroll, LinearLayout.LayoutParams(-1, dp(36))); gap(body, 3)
-        countdownView = txt("Candle closes in --:--", 10f, Color.rgb(255, 209, 102), true)
-        body.addView(countdownView!!)
+        body.addView(tfScroll, LinearLayout.LayoutParams(-1, dp(34))); gap(body, 2)
         val web = WebView(this).apply {
             setBackgroundColor(Color.rgb(9, 14, 22))
             settings.javaScriptEnabled = true
@@ -301,7 +305,8 @@ class MainActivity : Activity() {
             setOnClickListener { screen("Alerts") }
         }, LinearLayout.LayoutParams(0, dp(40), 1f))
         terminalActions.addView(Button(this).apply {
-            text = if (fullScreen) "Vertical" else "Horizontal"; isAllCaps = false
+            text = if (fullScreen) "Exit full screen" else "Landscape"
+            isAllCaps = false
             setOnClickListener { toggleFullScreen() }
         }, LinearLayout.LayoutParams(0, dp(40), 1f))
         body.addView(terminalActions)
@@ -344,12 +349,40 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).show()
     }
 
-    private fun changeCoin(direction: Int) {
-        if (marketSymbols.isEmpty()) return
-        val sorted = marketSymbols.sortedBy { it.symbol }
-        val current = sorted.indexOfFirst { it.symbol == symbol }.let { if (it < 0) 0 else it }
-        symbol = sorted[(current + direction + sorted.size) % sorted.size].symbol
-        screen("Chart")
+
+    private fun showSymbolPicker() {
+        val symbols = marketSymbols.sortedBy { it.symbol }
+        val input = EditText(this).apply {
+            hint = "Search Binance futures symbol"
+            setTextColor(Color.WHITE)
+            setHintTextColor(muted)
+            isSingleLine = true
+        }
+        val list = ListView(this)
+        val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, symbols.map { it.symbol }.toMutableList())
+        list.adapter = adapter
+        val container = LinearLayout(this).apply {
+            orientation = 1
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            addView(input)
+            addView(list, LinearLayout.LayoutParams(-1, dp(360)))
+        }
+        val dialog = android.app.AlertDialog.Builder(this).setTitle("Select Binance market").setView(container).create()
+        input.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                adapter.clear()
+                adapter.addAll(symbols.map { it.symbol }.filter { it.contains(s.toString(), true) })
+                adapter.notifyDataSetChanged()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        list.setOnItemClickListener { _, _, position, _ ->
+            symbol = adapter.getItem(position) ?: symbol
+            dialog.dismiss()
+            screen("Chart")
+        }
+        dialog.show()
     }
 
     @Suppress("DEPRECATION")
@@ -449,7 +482,8 @@ class MainActivity : Activity() {
     private fun settings() {
         body.addView(txt("Settings", 23f, Color.WHITE, true)); gap(body, 12)
         listOf(
-            "Market data     Bybit USDT Perpetual",
+            "Watchlist     Binance USDT Perpetual",
+            "Candles     Bybit Public Market Data",
             "Connection     $marketStatus",
             "Chart engine     TradingView Lightweight Charts",
             "API credentials     Not required",
