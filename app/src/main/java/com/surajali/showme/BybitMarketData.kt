@@ -247,11 +247,11 @@ class BybitMarketData(
         val old = marketMap[symbol] ?: MarketSymbol(symbol)
         marketMap[symbol] = MarketSymbol(
             symbol = symbol,
-            lastPrice = json.optString("lastPrice", old.lastPrice).ifBlank { old.lastPrice },
+            lastPrice = old.lastPrice,
             markPrice = json.optString("markPrice", old.markPrice).ifBlank { old.markPrice },
             indexPrice = json.optString("indexPrice", old.indexPrice).ifBlank { old.indexPrice },
-            change24h = json.optString("price24hPcnt").toDoubleOrNull() ?: old.change24h,
-            turnover24h = json.optString("turnover24h").toDoubleOrNull() ?: old.turnover24h
+            change24h = old.change24h,
+            turnover24h = old.turnover24h
         )
         val updated = marketMap[symbol]!!
         processReferencePrice(updated)
