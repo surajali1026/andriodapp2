@@ -209,7 +209,7 @@ class BybitMarketData(
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 socketConnected = false
-                activeKlineTopic = ""
+                activeTradeTopic = ""
                 main.removeCallbacks(heartbeat)
                 if (!closed) scheduleReconnect()
             }
