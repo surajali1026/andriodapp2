@@ -206,7 +206,20 @@ class MainActivity : Activity() {
     private fun chart() {
         val current = marketSymbols.firstOrNull { it.symbol == symbol }
         val chartHead = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
-        chartHead.addView(txt(symbol, 19f, Color.WHITE, true), LinearLayout.LayoutParams(0, dp(38), 1f))
+        val symbolTitle = txt(symbol, 19f, Color.WHITE, true)
+        var swipeStartX = 0f
+        symbolTitle.setOnTouchListener { _, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> { swipeStartX = event.x; true }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val delta = event.x - swipeStartX
+                    if (kotlin.math.abs(delta) > dp(35)) changeCoin(if (delta < 0) 1 else -1)
+                    true
+                }
+                else -> true
+            }
+        }
+        chartHead.addView(symbolTitle, LinearLayout.LayoutParams(0, dp(38), 1f))
         chartHead.addView(Button(this).apply { text = "◀"; minWidth = dp(38); setOnClickListener { changeCoin(-1) } })
         chartHead.addView(Button(this).apply { text = "▶"; minWidth = dp(38); setOnClickListener { changeCoin(1) } })
         chartHead.addView(Button(this).apply { text = if (fullScreen) "Exit" else "⛶"; isAllCaps = false; setOnClickListener { toggleFullScreen() } })
