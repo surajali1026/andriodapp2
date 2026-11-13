@@ -351,7 +351,8 @@ class MainActivity : Activity() {
 
 
     private fun showSymbolPicker() {
-        val symbols = marketSymbols.sortedBy { it.symbol }
+        val symbols = marketSymbols.toList()
+        var filter = "All"
         val input = EditText(this).apply {
             hint = "Search Binance futures symbol"
             setTextColor(Color.WHITE)
@@ -359,45 +360,69 @@ class MainActivity : Activity() {
             isSingleLine = true
         }
         val list = ListView(this)
-        val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, symbols.map { it.symbol }.toMutableList())
+        val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf<String>())
         list.adapter = adapter
+        fun refresh() {
+            val ranked = when (filter) {
+                "Gainers" -> symbols.sortedByDescending { it.change24h }.take(30)
+                "Losers" -> symbols.sortedBy { it.change24h }.take(30)
+                else -> symbols.sortedBy { it.symbol }
+            }
+            val query = input.text.toString().trim()
+            adapter.clear()
+            adapter.addAll(ranked.filter { it.symbol.contains(query, true) }.map {
+                it.symbol + "     " + String.format(java.util.Locale.US, "%+.2f%%", it.change24h * 100.0)
+            })
+            adapter.notifyDataSetChanged()
+        }
+        val filters = LinearLayout(this).apply { orientation = 0 }
+        listOf("All", "Gainers", "Losers").forEach { name ->
+            filters.addView(TextView(this).apply {
+                text = if (name == "Gainers") "Top Gainers" else if (name == "Losers") "Top Losers" else name
+                textSize = 11f; gravity = Gravity.CENTER
+                setTextColor(Color.WHITE); setPadding(dp(8), dp(10), dp(8), dp(10))
+                setBackgroundColor(if (filter == name) Color.rgb(42, 65, 88) else panel)
+                setOnClickListener { filter = name; refresh()
+                    for (i in 0 until filters.childCount) filters.getChildAt(i).setBackgroundColor(
+                        if ((listOf("All", "Gainers", "Losers")[i]) == filter) Color.rgb(42,65,88) else panel)
+                }
+            }, LinearLayout.LayoutParams(0, dp(40), 1f))
+        }
         val container = LinearLayout(this).apply {
             orientation = 1
             setPadding(dp(12), dp(6), dp(12), dp(6))
             addView(input)
+            addView(filters)
             addView(list, LinearLayout.LayoutParams(-1, dp(360)))
         }
         val dialog = android.app.AlertDialog.Builder(this).setTitle("Select Binance market").setView(container).create()
         input.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                adapter.clear()
-                adapter.addAll(symbols.map { it.symbol }.filter { it.contains(s.toString(), true) })
-                adapter.notifyDataSetChanged()
-            }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { refresh() }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
         list.setOnItemClickListener { _, _, position, _ ->
-            symbol = adapter.getItem(position) ?: symbol
+            symbol = adapter.getItem(position)?.substringBefore(" ") ?: symbol
             dialog.dismiss()
             screen("Chart")
         }
+        refresh()
         dialog.show()
     }
 
     @Suppress("DEPRECATION")
     private fun toggleFullScreen() {
         fullScreen = !fullScreen
-        if (fullScreen) {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            window.decorView.systemUiVisibility = (android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+        // Keep the device's current orientation: fullscreen must work in portrait AND landscape.
+        requestedOrientation = if (fullScreen) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        window.decorView.systemUiVisibility = if (fullScreen) {
+            (android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
                 or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-        } else {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
-        }
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+        } else android.view.View.SYSTEM_UI_FLAG_VISIBLE
         screen("Chart")
     }
 
