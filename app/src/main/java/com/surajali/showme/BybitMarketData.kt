@@ -43,6 +43,7 @@ class BybitMarketData(
     private var socket: WebSocket? = null
     private var activeSymbol = ""
     private var activeInterval = "1"
+    private var activePriceType = "Trade"
     private var activeTradeTopic = ""
     @Volatile private var currentTradeCandle: MarketCandle? = null
     private val heartbeat = object : Runnable {
@@ -147,6 +148,7 @@ class BybitMarketData(
             turnover24h = json.optString("turnover24h").toDoubleOrNull() ?: old.turnover24h
         )
         val updated = marketMap[symbol]!!
+        processReferencePrice(updated)
         main.post { onTicker(updated) }
     }
 
@@ -231,9 +233,10 @@ class BybitMarketData(
         }
     }
 
-    fun selectChart(symbol: String, interval: String) {
+    fun selectChart(symbol: String, interval: String, priceType: String = "Trade") {
         activeSymbol = symbol
         activeInterval = interval
+        activePriceType = priceType
         currentTradeCandle = null
         loadHistory(symbol, interval)
         socket?.let { subscribeTrades(it, symbol) }
@@ -249,6 +252,22 @@ class BybitMarketData(
         ws.send(JSONObject().put("op", "subscribe").put("args", JSONArray().put(topic)).toString())
     }
 
+    @Synchronized
+    private fun processReferencePrice(item: MarketSymbol) {
+        if (item.symbol != activeSymbol || activePriceType == "Trade") return
+        val price = (if (activePriceType == "Mark") item.markPrice else item.indexPrice).toDoubleOrNull() ?: return
+        val now = System.currentTimeMillis() / 1000L
+        val bucket = candleBucket(now, activeInterval)
+        val old = currentTradeCandle
+        val updated = when {
+            old == null || bucket > old.time -> MarketCandle(bucket, price, price, price, price)
+            bucket == old.time -> MarketCandle(bucket, old.open, maxOf(old.high, price), minOf(old.low, price), price)
+            else -> return
+        }
+        currentTradeCandle = updated
+        val selected = activeSymbol
+        main.post { onLiveCandle(selected, updated) }
+    }
     @Synchronized
     private fun processTrade(trade: JSONObject) {
         if (trade.optString("s") != activeSymbol) return
@@ -291,7 +310,8 @@ class BybitMarketData(
     private fun loadHistory(symbol: String, interval: String) {
         val customMinutes = interval.toIntOrNull()
         val apiInterval = if (customMinutes != null && customMinutes !in listOf(1, 3, 5, 15, 30, 60, 120, 240, 360, 720)) "1" else interval
-        val url = "https://api.bybit.com/v5/market/kline?category=linear&symbol=$symbol&interval=$apiInterval&limit=1000"
+        val endpoint = when (activePriceType) { "Mark" -> "mark-price-kline"; "Index" -> "index-price-kline"; else -> "kline" }
+        val url = "https://api.bybit.com/v5/market/$endpoint?category=linear&symbol=$symbol&interval=$apiInterval&limit=1000"
         client.newCall(Request.Builder().url(url).get().build()).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 status("Historical candles failed: " + (e.message ?: "network error"))
