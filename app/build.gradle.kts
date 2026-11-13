@@ -5,6 +5,11 @@ plugins {
 android {
     namespace = "com.surajali.showme"
     compileSdk = 35
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
     ndkVersion = "27.2.12479018"
     defaultConfig {
         applicationId = "com.surajali.showme"
