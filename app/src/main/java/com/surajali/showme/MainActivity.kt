@@ -208,7 +208,7 @@ class MainActivity : Activity() {
         listOf(last.first, mark.first, index.first).forEach { line.addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
         prices.addView(line); body.addView(prices); gap(body, 8)
         val tf = LinearLayout(this).apply { orientation = 0 }
-        val timeframes = listOf("1m" to "1", "3m" to "3", "5m" to "5", "15m" to "15", "30m" to "30", "1h" to "60", "4h" to "240", "1D" to "D", "1W" to "W", "1M" to "M")
+        val timeframes = listOf("1m" to "1", "3m" to "3", "5m" to "5", "15m" to "15", "30m" to "30", "1h" to "60", "2h" to "120", "4h" to "240", "6h" to "360", "12h" to "720", "1D" to "D", "1W" to "W", "1M" to "M")
         timeframes.forEach { (label, value) ->
             val button = TextView(this).apply {
                 text = label; textSize = 10f; gravity = Gravity.CENTER
