@@ -237,7 +237,7 @@ class MainActivity : Activity() {
             setPadding(dp(4), dp(4), dp(4), dp(4))
             setBackgroundColor(panel)
         }
-        fun priceOption(label: String, type: String, initial: String): Pair<TextView, TextView> {
+        fun priceOption(label: String, type: String, initial: String): Pair<LinearLayout, TextView> {
             val value = txt(initial, 13f, Color.WHITE, true)
             val option = LinearLayout(this).apply {
                 orientation = 1
@@ -361,10 +361,6 @@ class MainActivity : Activity() {
             }
         }
         body.addView(chartFrame, LinearLayout.LayoutParams(-1, 0, 1f))
-        current?.let { updatePriceLabels(it) }
-        marketData.selectChart(symbol, interval, priceType)
-    }
-
         current?.let { updatePriceLabels(it) }
         marketData.selectChart(symbol, interval, priceType)
     }
