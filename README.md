@@ -1,33 +1,35 @@
-# ShowMe
+# SHOWME Android
 
-ShowMe is a new Android trading-terminal app. Its visual direction follows the compact dark terminal workflow of the user-provided MetaTrader 5 reference APK, implemented with original code and assets.
+SHOWME is a native Android market-watch and chart terminal.
 
-## Included in this first preview
-- App name: **SHOWME**
-- Market Watch with symbol search and locally addable symbols
-- Dedicated Chart terminal screen
-- Last Price, Mark Price, and Index Price shown together in the chart terminal
-- Timeframe selector layout (M1, M5, M15, M30, H1, H4, D1)
-- Price Alerts screen: create, save, list, and delete above/below alert rules locally
-- Settings screen
-- Four bottom tabs only: Quotes, Chart, Alerts, Settings
+## Market data
+- Bybit V5 public **linear USDT perpetual** market data.
+- No API key and no trading permissions are used.
+- Instrument catalogue is loaded from the public instruments endpoint, including pagination.
+- All, Top 100 (24h turnover), Top Gainer and Top Loser watchlist filters.
+- REST historical OHLC candles and live WebSocket Kline updates.
+- Live ticker fields: Last Price, Mark Price, Index Price, 24h change and turnover.
+- WebSocket subscriptions are paced and reconnect automatically.
 
-## Intentionally excluded
+## Chart
+- TradingView Lightweight Charts (open-source chart renderer).
+- Supported Bybit intervals: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 12h, 1D, 1W, 1M.
+- Historical candles are loaded first; the active candle is updated from the Bybit Kline stream.
+
+## App scope
+Included: Market Watch, symbol search, Chart, Alerts screen and Settings.
+
+Intentionally excluded:
 - Buy / Sell interface
 - Open Positions
 - Trade History
 - Order Management
 - Depth of Market
 
-## Not connected yet
-- Candle rendering and chart data (will be added only after a separate user instruction)
-- Live Last / Mark / Index price feed
-- Automatic alert triggering and Android push notifications
+Price alerts are currently stored locally; automatic alert triggering and Android notifications are not enabled yet.
 
-Alert rules currently persist on the device. They cannot trigger until a live market-price feed is connected. The three price fields are present in the terminal UI but show placeholders until then.
+## Data-source note
+Bybit prices and candles represent **Bybit's own futures market**, not Binance prices or Binance's contract catalogue. Top 100 is ranked by Bybit 24-hour turnover.
 
 ## Build
-GitHub Actions builds a debug APK on pushes to `main` and manual workflow dispatch. Download the `ShowMe-debug` artifact from the workflow run.
-
-## Reference and originality
-The supplied MetaTrader 5 APK is used only as a visual/workflow reference. This project does not include MetaQuotes proprietary source code, binary libraries, trademarks, or extracted copyrighted assets.
+GitHub Actions builds a debug APK on pushes to `main` and manual workflow dispatch. Download the `ShowMe-debug` artifact from the successful workflow run.
