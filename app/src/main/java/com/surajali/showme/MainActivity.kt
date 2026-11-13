@@ -338,8 +338,8 @@ class MainActivity : Activity() {
                     if (kotlin.math.abs(dx) > dp(4) || kotlin.math.abs(dy) > dp(4)) moved = true
                     if (moved) {
                         lp.gravity = Gravity.TOP or Gravity.START
-                        lp.leftMargin = (lp.leftMargin + dx).coerceIn(0, (chartFrame.width - view.width).coerceAtLeast(0))
-                        lp.topMargin = (lp.topMargin + dy).coerceIn(0, (chartFrame.height - view.height).coerceAtLeast(0))
+                        lp.leftMargin = (view.x + dx).toInt().coerceIn(0, (chartFrame.width - view.width).toInt().coerceAtLeast(0))
+                        lp.topMargin = (view.y + dy).toInt().coerceIn(0, (chartFrame.height - view.height).toInt().coerceAtLeast(0))
                         view.layoutParams = lp
                         downX = event.rawX; downY = event.rawY
                     }
