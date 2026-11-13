@@ -104,15 +104,22 @@ class MainActivity : Activity() {
         chartWeb = null
         quoteRows.clear()
         val root = LinearLayout(this).apply {
-            orientation = 1; setPadding(dp(8), dp(8), dp(8), dp(3)); setBackgroundColor(bg)
+            orientation = 1
+            setPadding(if (fullScreen && tab == "Chart") 0 else dp(8),
+                if (fullScreen && tab == "Chart") 0 else dp(8),
+                if (fullScreen && tab == "Chart") 0 else dp(8),
+                if (fullScreen && tab == "Chart") 0 else dp(3))
+            setBackgroundColor(bg)
         }
-        val head = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
-        head.addView(txt("SHOWME", 20f, Color.WHITE, true), LinearLayout.LayoutParams(0, dp(36), 1f))
-        head.addView(txt("● LIVE DATA", 10f, Color.rgb(40, 190, 130), true))
-        root.addView(head)
-        statusView = txt(marketStatus, 10f, muted)
-        root.addView(statusView)
-        gap(root, 10)
+        if (!(fullScreen && tab == "Chart")) {
+            val head = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
+            head.addView(txt("SHOWME", 20f, Color.WHITE, true), LinearLayout.LayoutParams(0, dp(36), 1f))
+            head.addView(txt("● LIVE DATA", 10f, Color.rgb(40, 190, 130), true))
+            root.addView(head)
+            statusView = txt(marketStatus, 10f, muted)
+            root.addView(statusView)
+            gap(root, 6)
+        } else statusView = null
         body = LinearLayout(this).apply { orientation = 1 }
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
         when (tab) {
@@ -121,17 +128,19 @@ class MainActivity : Activity() {
             "Alerts" -> alerts()
             else -> settings()
         }
-        val nav = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER }
-        listOf("Quotes", "Chart", "Alerts", "Settings").forEach { name ->
-            val b = TextView(this).apply {
-                text = name; gravity = Gravity.CENTER; textSize = 11f
-                setTextColor(if (tab == name) Color.WHITE else muted)
-                setPadding(0, dp(14), 0, dp(14))
-                setOnClickListener { screen(name) }
+        if (!(fullScreen && tab == "Chart")) {
+            val nav = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER }
+            listOf("Quotes", "Chart", "Alerts", "Settings").forEach { name ->
+                val b = TextView(this).apply {
+                    text = name; gravity = Gravity.CENTER; textSize = 11f
+                    setTextColor(if (tab == name) Color.WHITE else muted)
+                    setPadding(0, dp(14), 0, dp(14))
+                    setOnClickListener { screen(name) }
+                }
+                nav.addView(b, LinearLayout.LayoutParams(0, dp(50), 1f))
             }
-            nav.addView(b, LinearLayout.LayoutParams(0, dp(50), 1f))
+            root.addView(nav)
         }
-        root.addView(nav)
         setContentView(root)
     }
 
@@ -142,7 +151,7 @@ class MainActivity : Activity() {
 
     private fun quotes() {
         body.addView(txt("Market Watch", 23f, Color.WHITE, true))
-        body.addView(txt("Bybit USDT Perpetual • Public market data", 11f, muted))
+        body.addView(txt("Binance USDT Perpetual • Live watchlist", 11f, muted))
         gap(body, 10)
         val search = EditText(this).apply {
             hint = "Search futures symbol"; setHintTextColor(muted); setTextColor(Color.WHITE)
@@ -206,23 +215,17 @@ class MainActivity : Activity() {
     private fun chart() {
         val current = marketSymbols.firstOrNull { it.symbol == symbol }
         val chartHead = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
-        val symbolTitle = txt(symbol, 19f, Color.WHITE, true)
-        var swipeStartX = 0f
-        symbolTitle.setOnTouchListener { _, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> { swipeStartX = event.x; true }
-                android.view.MotionEvent.ACTION_UP -> {
-                    val delta = event.x - swipeStartX
-                    if (kotlin.math.abs(delta) > dp(35)) changeCoin(if (delta < 0) 1 else -1)
-                    true
-                }
-                else -> true
-            }
+        val symbolTitle = txt(symbol + "  ▾", 17f, Color.WHITE, true).apply {
+            setPadding(dp(5), dp(5), dp(12), dp(5))
+            setOnClickListener { showSymbolPicker() }
         }
         chartHead.addView(symbolTitle, LinearLayout.LayoutParams(0, dp(38), 1f))
-        chartHead.addView(Button(this).apply { text = "◀"; minWidth = dp(38); setOnClickListener { changeCoin(-1) } })
-        chartHead.addView(Button(this).apply { text = "▶"; minWidth = dp(38); setOnClickListener { changeCoin(1) } })
-        chartHead.addView(Button(this).apply { text = if (fullScreen) "Exit" else "⛶"; isAllCaps = false; setOnClickListener { toggleFullScreen() } })
+        chartHead.addView(Button(this).apply {
+            text = if (fullScreen) "Exit" else "⛶"
+            isAllCaps = false
+            minWidth = dp(44)
+            setOnClickListener { toggleFullScreen() }
+        })
         body.addView(chartHead)
         body.addView(txt("USDT Perpetual • Bybit live feed", 10f, muted))
         gap(body, 4)
