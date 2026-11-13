@@ -4,7 +4,7 @@
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#090e16;overflow:hidden;color:#dce6f3;font:12px Arial;overscroll-behavior:none}
 #wrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column}
 #stage{position:relative;flex:1;min-height:0}#chart{position:absolute;inset:0}
-#draw{position:absolute;inset:0;width:100%;height:100%;touch-action:none;pointer-events:none}
+#draw{position:absolute;inset:0;width:100%;height:100%;z-index:5;touch-action:none;pointer-events:none;user-select:none;-webkit-user-select:none}
 #tools{position:absolute;z-index:20;bottom:9px;left:7px;display:flex;gap:5px;align-items:center;padding:6px;background:rgba(12,15,22,.96);border:1px solid #282b32;border-radius:10px;max-width:calc(100% - 14px);overflow-x:auto;transform:translateX(calc(-100% + 45px));transition:transform .18s ease;box-shadow:0 3px 14px #0009;scrollbar-width:none}
 #tools.open{transform:translateX(0)}#tools button{background:#17191f;color:#dce6f3;border:1px solid #30343d;border-radius:7px;padding:9px 10px;white-space:nowrap;font-size:12px;min-height:38px}
 #tools button.active{background:#164c48;border-color:#20c997;color:#fff}
@@ -28,16 +28,21 @@ function updateCandle(item){init();if(series)series.update(item)}
 function xy(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
 function paint(){if(!ctx)return;ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);const drawOne=(s,i)=>{ctx.strokeStyle=i===selected?'#ffd166':'#43b8ff';ctx.lineWidth=i===selected?2.4:2;ctx.setLineDash(s.type==='hline'?[7,5]:[]);ctx.beginPath();if(s.type==='hline'){ctx.moveTo(0,s.y1);ctx.lineTo(canvas.clientWidth,s.y1)}else if(s.type==='rect'){ctx.rect(s.x1,s.y1,s.x2-s.x1,s.y2-s.y1)}else{ctx.moveTo(s.x1,s.y1);ctx.lineTo(s.x2,s.y2)}ctx.stroke();ctx.setLineDash([])};shapes.forEach(drawOne);if(draft)drawOne(draft,-1)}
 function hit(p){for(let i=shapes.length-1;i>=0;i--){const s=shapes[i],minX=Math.min(s.x1,s.x2),maxX=Math.max(s.x1,s.x2),minY=Math.min(s.y1,s.y2),maxY=Math.max(s.y1,s.y2);if(s.type==='hline'&&Math.abs(p.y-s.y1)<12)return i;if(s.type==='rect'&&p.x>=minX-10&&p.x<=maxX+10&&p.y>=minY-10&&p.y<=maxY+10)return i;if(s.type==='trend'){const dx=s.x2-s.x1,dy=s.y2-s.y1,t=dx===0?0:(p.x-s.x1)/dx,yy=s.y1+t*dy;if(t>=-.05&&t<=1.05&&Math.abs(p.y-yy)<12)return i}}return -1}
-function beginDraw(e){if(tool==='cursor')return;e.preventDefault();e.stopPropagation();const p=xy(e);activePointer=e.pointerId;try{canvas.setPointerCapture(e.pointerId)}catch(_){}if(tool==='move'){selected=hit(p);if(selected>=0&&!locked){dragging=true;dragStart=p;draft={...shapes[selected]}}paint();return}selected=-1;draft={type:tool,x1:p.x,y1:p.y,x2:p.x,y2:p.y};paint()}
-function moveDraw(e){if(activePointer!==e.pointerId||!draft)return;e.preventDefault();const p=xy(e);if(dragging&&selected>=0){const dx=p.x-dragStart.x,dy=p.y-dragStart.y,s=shapes[selected];s.x1=draft.x1+dx;s.x2=draft.x2+dx;s.y1=draft.y1+dy;s.y2=draft.y2+dy}else{draft.x2=p.x;draft.y2=tool==='hline'?draft.y1:p.y}paint()}
-function finishDraw(e){if(activePointer!==null&&e.pointerId!==activePointer)return;e.preventDefault();if(dragging){dragging=false;draft=null}else if(draft){if(tool==='hline')draft.y2=draft.y1;if(tool==='hline'||Math.hypot(draft.x2-draft.x1,draft.y2-draft.y1)>5){shapes.push({...draft});selected=shapes.length-1}draft=null}activePointer=null;paint()}
-canvas.addEventListener('pointerdown',beginDraw,{passive:false});
-canvas.addEventListener('pointermove',moveDraw,{passive:false});
-canvas.addEventListener('pointerup',finishDraw,{passive:false});
-canvas.addEventListener('pointercancel',finishDraw,{passive:false});
-canvas.addEventListener('lostpointercapture',()=>{if(activePointer!==null){activePointer=null;if(draft&&!dragging){draft=null;paint()}}});
+function pointFromClient(clientX,clientY){const r=canvas.getBoundingClientRect();return{x:clientX-r.left,y:clientY-r.top}}
+function beginAt(p){if(tool==='cursor')return;activePointer=1;if(tool==='move'){selected=hit(p);if(selected>=0&&!locked){dragging=true;dragStart=p;draft={...shapes[selected]}}paint();return}selected=-1;draft={type:tool,x1:p.x,y1:p.y,x2:p.x,y2:p.y};paint()}
+function moveAt(p){if(activePointer===null||!draft)return;if(dragging&&selected>=0){const dx=p.x-dragStart.x,dy=p.y-dragStart.y,s=shapes[selected];s.x1=draft.x1+dx;s.x2=draft.x2+dx;s.y1=draft.y1+dy;s.y2=draft.y2+dy}else{draft.x2=p.x;draft.y2=tool==='hline'?draft.y1:p.y}paint()}
+function finishAt(){if(activePointer===null)return;if(dragging){dragging=false;draft=null}else if(draft){if(tool==='hline')draft.y2=draft.y1;if(tool==='hline'||Math.hypot(draft.x2-draft.x1,draft.y2-draft.y1)>5){shapes.push({...draft});selected=shapes.length-1}draft=null}activePointer=null;paint()}
+// Native Android WebView touch path. Do not depend on PointerEvent capture.
+canvas.addEventListener('touchstart',e=>{if(tool==='cursor')return;e.preventDefault();e.stopPropagation();const t=e.changedTouches[0];beginAt(pointFromClient(t.clientX,t.clientY))},{passive:false});
+canvas.addEventListener('touchmove',e=>{if(activePointer===null)return;e.preventDefault();e.stopPropagation();const t=e.changedTouches[0];moveAt(pointFromClient(t.clientX,t.clientY))},{passive:false});
+canvas.addEventListener('touchend',e=>{if(activePointer===null)return;e.preventDefault();e.stopPropagation();finishAt()},{passive:false});
+canvas.addEventListener('touchcancel',e=>{if(activePointer!==null){e.preventDefault();finishAt()}},{passive:false});
+// Mouse support for desktop browser testing.
+canvas.addEventListener('mousedown',e=>{if(tool==='cursor')return;e.preventDefault();beginAt(pointFromClient(e.clientX,e.clientY))});
+window.addEventListener('mousemove',e=>{if(activePointer!==null&&e.buttons)moveAt(pointFromClient(e.clientX,e.clientY))});
+window.addEventListener('mouseup',()=>finishAt());
 window.priceAtY=function(y){if(!series||!chart)return null;const value=series.coordinateToPrice(Number(y));return value==null?null:Number(value)};
-document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;document.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('active',x===b));canvas.style.pointerEvents=tool==='cursor'?'none':'auto';canvas.style.touchAction=tool==='cursor'?'auto':'none';showTools()});
+document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;document.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('active',x===b));canvas.style.pointerEvents=tool==='cursor'?'none':'auto';canvas.style.touchAction=tool==='cursor'?'auto':'none';canvas.style.pointerEvents=tool==='cursor'?'none':'auto';showTools()});
 document.getElementById('lock').onclick=e=>{locked=!locked;e.target.textContent=locked?'Locked':'Unlock';showTools()};
 document.getElementById('del').onclick=()=>{if(selected>=0){shapes.splice(selected,1);selected=-1;paint()}showTools()};
 document.getElementById('clear').onclick=()=>{shapes=[];draft=null;selected=-1;paint();showTools()};
