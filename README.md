@@ -1,51 +1,33 @@
 # ShowMe
 
-ShowMe is an original Android trading-terminal project inspired by the navigation and workflow patterns visible in the user-provided MetaTrader 5 APK.
+ShowMe is a new Android trading-terminal app. Its visual direction follows the compact dark terminal workflow of the user-provided MetaTrader 5 reference APK, implemented with original code and assets.
 
-## Current scope
+## Included in this first preview
+- App name: **SHOWME**
+- Market Watch with symbol search and locally addable symbols
+- Dedicated Chart terminal screen
+- Last Price, Mark Price, and Index Price shown together in the chart terminal
+- Timeframe selector layout (M1, M5, M15, M30, H1, H4, D1)
+- Price Alerts screen: create, save, list, and delete above/below alert rules locally
+- Settings screen
+- Four bottom tabs only: Quotes, Chart, Alerts, Settings
 
-This first stage establishes the app identity and terminal structure only. The candlestick renderer/data pipeline is intentionally deferred until the user gives a separate candle-creation command.
+## Intentionally excluded
+- Buy / Sell interface
+- Open Positions
+- Trade History
+- Order Management
+- Depth of Market
 
-## App identity
+## Not connected yet
+- Candle rendering and chart data (will be added only after a separate user instruction)
+- Live Last / Mark / Index price feed
+- Automatic alert triggering and Android push notifications
 
-- Display name: **ShowMe**
-- Android application id (planned): `com.surajali.showme`
-- Platform: Android
-- Initial visual direction: dark, compact, professional trading-terminal UI
+Alert rules currently persist on the device. They cannot trigger until a live market-price feed is connected. The three price fields are present in the terminal UI but show placeholders until then.
 
-## Reference APK observations
+## Build
+GitHub Actions builds a debug APK on pushes to `main` and manual workflow dispatch. Download the `ShowMe-debug` artifact from the workflow run.
 
-The supplied APK is MetaTrader 5. Its visible product structure and embedded identifiers indicate these major areas:
-
-- Quotes / Market Watch and symbol selection
-- Chart workspace and chart toolbar/settings
-- Trade / open positions and pending orders
-- History / deals, orders, and positions
-- Settings
-- Market depth (Depth of Market)
-- Symbol search and symbol details
-- Order actions: new, modify, close, close-by, and reverse
-- One-click trading controls
-
-These are functional references for an independently implemented app. This repository does not contain MetaTrader's proprietary source code, binary libraries, trademarks, or extracted copyrighted UI assets.
-
-## Stage 1 — shell only
-
-- Create a native Android app shell named ShowMe.
-- Add bottom navigation for Quotes, Chart, Trade, History, and Settings.
-- Add a Quotes/Market Watch list with symbol rows and bid/ask placeholders.
-- Add a Chart screen container and toolbar placeholder. **Do not implement candles yet.**
-- Add Trade, History, and Settings screen shells.
-- Keep chart data providers and candle rendering isolated so they can be added later without rewriting navigation.
-
-## Deferred until a separate instruction
-
-- Candlestick creation/rendering and market-data source
-- Live prices and streaming
-- Timeframes and chart interactions
-- Drawing tools and indicators
-- Trading execution or broker connectivity
-
-## Implementation note
-
-Use original code and assets. Recreate general interaction patterns where practical, but do not decompile, copy, or redistribute MetaQuotes implementation code or proprietary assets.
+## Reference and originality
+The supplied MetaTrader 5 APK is used only as a visual/workflow reference. This project does not include MetaQuotes proprietary source code, binary libraries, trademarks, or extracted copyrighted assets.
