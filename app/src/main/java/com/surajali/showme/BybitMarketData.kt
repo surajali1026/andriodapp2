@@ -313,7 +313,21 @@ class BybitMarketData(
                         }
                         candles.sortBy { c -> c.time }
                         synchronized(this@BybitMarketData) {
-                            currentTradeCandle = candles.lastOrNull()
+                            val latest = candles.lastOrNull()
+                            val live = currentTradeCandle
+                            currentTradeCandle = when {
+                                latest == null -> live
+                                live == null || live.time > latest.time -> live ?: latest
+                                live.time == latest.time -> MarketCandle(
+                                    latest.time, latest.open, maxOf(latest.high, live.high),
+                                    minOf(latest.low, live.low), live.close
+                                )
+                                else -> latest
+                            }
+                            val merged = currentTradeCandle
+                            if (merged != null && candles.isNotEmpty() && candles.last().time == merged.time) {
+                                candles[candles.lastIndex] = merged
+                            }
                         }
                         main.post { onHistory(symbol, candles) }
                     } catch (e: Exception) {
