@@ -41,6 +41,9 @@ class BybitMarketData(
         .build()
     private val marketMap = LinkedHashMap<String, MarketSymbol>()
     private var socket: WebSocket? = null
+    private var binanceSocket: WebSocket? = null
+    private val binanceSymbols = HashSet<String>()
+    @Volatile private var binanceSymbolsLoaded = false
     private var activeSymbol = ""
     private var activeInterval = "1"
     private var activePriceType = "Trade"
@@ -60,8 +63,111 @@ class BybitMarketData(
 
     fun start() {
         closed = false
-        // Load the complete ticker snapshot first; do not block the watchlist on paginated instruments.
+        // Binance owns the watchlist; Bybit remains the chart/mark/index data source.
+        loadBinanceWatchlist()
         loadTickers()
+    }
+
+
+    private fun loadBinanceWatchlist() {
+        val request = Request.Builder().url("https://fapi.binance.com/fapi/v1/exchangeInfo").get().build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                status("Binance watchlist failed: " + (e.message ?: "network error"))
+            }
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    try {
+                        val root = JSONObject(it.body?.string() ?: "{}")
+                        val list = root.getJSONArray("symbols")
+                        binanceSymbols.clear()
+                        for (i in 0 until list.length()) {
+                            val item = list.getJSONObject(i)
+                            if (item.optString("status") == "TRADING" &&
+                                item.optString("quoteAsset") == "USDT" &&
+                                item.optString("contractType") == "PERPETUAL") {
+                                binanceSymbols.add(item.optString("symbol"))
+                            }
+                        }
+                        binanceSymbolsLoaded = true
+                        loadBinanceTickers()
+                    } catch (e: Exception) {
+                        status("Could not parse Binance symbols: " + (e.message ?: ""))
+                    }
+                }
+            }
+        })
+    }
+
+    private fun loadBinanceTickers() {
+        val request = Request.Builder().url("https://fapi.binance.com/fapi/v1/ticker/24hr").get().build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                status("Binance symbols ready; ticker snapshot failed")
+                publishBinanceMarkets()
+                connectBinanceSocket()
+            }
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    try {
+                        val list = JSONArray(it.body?.string() ?: "[]")
+                        for (i in 0 until list.length()) mergeBinanceTicker(list.getJSONObject(i))
+                        publishBinanceMarkets()
+                        connectBinanceSocket()
+                    } catch (e: Exception) {
+                        status("Binance ticker parse error: " + (e.message ?: ""))
+                    }
+                }
+            }
+        })
+    }
+
+    private fun mergeBinanceTicker(json: JSONObject) {
+        val symbol = json.optString("symbol")
+        if (symbol !in binanceSymbols) return
+        val old = marketMap[symbol] ?: MarketSymbol(symbol)
+        val updated = MarketSymbol(
+            symbol = symbol,
+            lastPrice = json.optString("lastPrice", old.lastPrice),
+            markPrice = old.markPrice,
+            indexPrice = old.indexPrice,
+            change24h = (json.optString("priceChangePercent").toDoubleOrNull() ?: 0.0) / 100.0,
+            turnover24h = json.optString("quoteVolume").toDoubleOrNull() ?: 0.0
+        )
+        synchronized(marketMap) { marketMap[symbol] = updated }
+        main.post { onTicker(updated) }
+    }
+
+    private fun publishBinanceMarkets() {
+        val copy = synchronized(marketMap) {
+            marketMap.values.filter { it.symbol in binanceSymbols }.sortedByDescending { it.turnover24h }
+        }
+        main.post {
+            onMarkets(copy)
+            onStatus("Binance Futures watchlist • Bybit chart feed")
+        }
+    }
+
+    private fun connectBinanceSocket() {
+        if (closed) return
+        val request = Request.Builder().url("wss://fstream.binance.com/ws/!ticker@arr").build()
+        binanceSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                status("LIVE • Binance watchlist / Bybit candles")
+            }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    val array = JSONArray(text)
+                    for (i in 0 until array.length()) mergeBinanceTicker(array.getJSONObject(i))
+                } catch (_: Exception) { }
+            }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (!closed) main.postDelayed({ connectBinanceSocket() }, 3000L)
+            }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (!closed) main.postDelayed({ connectBinanceSocket() }, 3000L)
+            }
+        })
     }
 
     private fun loadInstruments(cursor: String?, collected: MutableList<String>) {
@@ -149,12 +255,14 @@ class BybitMarketData(
         )
         val updated = marketMap[symbol]!!
         processReferencePrice(updated)
-        main.post { onTicker(updated) }
+        // Bybit contributes mark/index values; Binance remains the watchlist last-price source.
+        if (binanceSymbolsLoaded && symbol in binanceSymbols) main.post { onTicker(updated) }
     }
 
     private fun publishMarkets() {
         val copy = synchronized(marketMap) { marketMap.values.toList() }
-        main.post { onMarkets(copy); onStatus("Connected to Bybit public market data") }
+        if (!binanceSymbolsLoaded) main.post { onStatus("Connecting Binance watchlist…") }
+        else main.post { onMarkets(copy.filter { it.symbol in binanceSymbols }) }
     }
 
     private fun connectSocket() {
@@ -383,7 +491,9 @@ class BybitMarketData(
         closed = true
         main.removeCallbacks(heartbeat)
         socket?.close(1000, "App stopped")
+        binanceSocket?.close(1000, "App stopped")
         socket = null
+        binanceSocket = null
         client.dispatcher.cancelAll()
     }
 }
