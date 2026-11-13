@@ -208,21 +208,25 @@ class MainActivity : Activity() {
         listOf(last.first, mark.first, index.first).forEach { line.addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
         prices.addView(line); body.addView(prices); gap(body, 8)
         val tf = LinearLayout(this).apply { orientation = 0 }
+        val tfScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(tf)
+        }
         val timeframes = listOf("1m" to "1", "3m" to "3", "5m" to "5", "15m" to "15", "30m" to "30", "1h" to "60", "2h" to "120", "4h" to "240", "6h" to "360", "12h" to "720", "1D" to "D", "1W" to "W", "1M" to "M")
         timeframes.forEach { (label, value) ->
             val button = TextView(this).apply {
                 text = label; textSize = 10f; gravity = Gravity.CENTER
                 setTextColor(if (interval == value) Color.WHITE else muted)
-                setPadding(dp(5), dp(9), dp(5), dp(9))
+                setPadding(dp(9), dp(9), dp(9), dp(9))
                 setBackgroundColor(if (interval == value) Color.rgb(42, 65, 88) else panel)
                 setOnClickListener {
                     interval = value
                     screen("Chart")
                 }
             }
-            tf.addView(button, LinearLayout.LayoutParams(0, dp(36), 1f))
+            tf.addView(button, LinearLayout.LayoutParams(-2, dp(36)))
         }
-        body.addView(tf); gap(body, 8)
+        body.addView(tfScroll, LinearLayout.LayoutParams(-1, dp(36))); gap(body, 8)
         val web = WebView(this).apply {
             setBackgroundColor(Color.rgb(9, 14, 22))
             settings.javaScriptEnabled = true
