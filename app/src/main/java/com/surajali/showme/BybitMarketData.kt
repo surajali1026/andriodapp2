@@ -48,6 +48,7 @@ class BybitMarketData(
     private var activeInterval = "1"
     private var activePriceType = "Trade"
     private var activeTradeTopic = ""
+    private var activeTickerTopic = ""
     @Volatile private var currentTradeCandle: MarketCandle? = null
     private val heartbeat = object : Runnable {
         override fun run() {
@@ -279,7 +280,10 @@ class BybitMarketData(
                 main.postDelayed(heartbeat, 20_000L)
                 status("LIVE • Bybit WebSocket connected")
                 subscribeTickers(webSocket)
-                if (activeSymbol.isNotBlank()) subscribeTrades(webSocket, activeSymbol)
+                if (activeSymbol.isNotBlank()) {
+                    subscribeTrades(webSocket, activeSymbol)
+                    subscribeSymbolTicker(webSocket, activeSymbol)
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -313,6 +317,7 @@ class BybitMarketData(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 socketConnected = false
                 activeTradeTopic = ""
+                activeTickerTopic = ""
                 main.removeCallbacks(heartbeat)
                 status("Live feed disconnected; reconnecting…")
                 scheduleReconnect()
@@ -347,7 +352,20 @@ class BybitMarketData(
         activePriceType = priceType
         currentTradeCandle = null
         loadHistory(symbol, interval)
-        socket?.let { subscribeTrades(it, symbol) }
+        socket?.let {
+            subscribeTrades(it, symbol)
+            subscribeSymbolTicker(it, symbol)
+        }
+    }
+
+    private fun subscribeSymbolTicker(ws: WebSocket, symbol: String) {
+        val topic = "tickers.$symbol"
+        if (activeTickerTopic == topic) return
+        if (activeTickerTopic.isNotBlank()) {
+            ws.send(JSONObject().put("op", "unsubscribe").put("args", JSONArray().put(activeTickerTopic)).toString())
+        }
+        activeTickerTopic = topic
+        ws.send(JSONObject().put("op", "subscribe").put("args", JSONArray().put(topic)).toString())
     }
 
     private fun subscribeTrades(ws: WebSocket, symbol: String) {
