@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private var lastPriceView: TextView? = null
     private var markPriceView: TextView? = null
     private var indexPriceView: TextView? = null
+    private var priceMenuView: TextView? = null
     private var chartWeb: WebView? = null
     private var chartReady = false
     private var countdownView: TextView? = null
@@ -247,6 +248,7 @@ class MainActivity : Activity() {
                 popup.show()
             }
         }
+        priceMenuView = priceMenuButton
         chartHead.addView(priceMenuButton, LinearLayout.LayoutParams(-2, dp(38)))
         chartHead.addView(Button(this).apply {
             text = if (fullScreen) "Exit" else "⛶"
@@ -470,6 +472,12 @@ class MainActivity : Activity() {
         lastPriceView?.text = item.lastPrice
         markPriceView?.text = item.markPrice
         indexPriceView?.text = item.indexPrice
+        val selected = when (priceType) {
+            "Mark" -> item.markPrice
+            "Index" -> item.indexPrice
+            else -> item.lastPrice
+        }
+        priceMenuView?.text = (if (priceType == "Trade") "LAST" else priceType.uppercase()) + "  " + selected + "  ▾"
     }
 
     private fun renderHistory(candles: List<MarketCandle>) {
