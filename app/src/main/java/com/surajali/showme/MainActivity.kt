@@ -8,6 +8,8 @@ import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
+import android.view.MotionEvent
+import android.widget.FrameLayout
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
@@ -229,30 +231,43 @@ class MainActivity : Activity() {
         body.addView(chartHead)
         body.addView(txt("USDT Perpetual • Bybit live feed", 10f, muted))
         gap(body, 4)
-        val prices = card()
-        val line = LinearLayout(this).apply { orientation = 0 }
-        fun priceColumn(label: String, type: String, initial: String): Pair<LinearLayout, TextView> {
-            val value = txt(initial, 14f, Color.WHITE, true)
-            val column = LinearLayout(this).apply {
+        // Compact Last / Mark / Index segmented selector.
+        val prices = LinearLayout(this).apply {
+            orientation = 0
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            setBackgroundColor(panel)
+        }
+        fun priceOption(label: String, type: String, initial: String): Pair<TextView, TextView> {
+            val value = txt(initial, 13f, Color.WHITE, true)
+            val option = LinearLayout(this).apply {
                 orientation = 1
-                setPadding(dp(5), dp(5), dp(3), dp(5))
-                setBackgroundColor(if (priceType == type) Color.rgb(42, 65, 88) else panel)
-                addView(txt(label, 9f, muted, true))
-                addView(value)
+                gravity = Gravity.CENTER
+                setPadding(dp(5), dp(7), dp(5), dp(7))
                 setOnClickListener {
                     priceType = type
                     marketData.selectChart(symbol, interval, priceType)
                     screen("Chart")
                 }
+                addView(txt(label, 9f, muted, true))
+                addView(value)
             }
-            return Pair(column, value)
+            return Pair(option, value)
         }
-        val last = priceColumn("LAST PRICE", "Trade", current?.lastPrice ?: "--")
-        val mark = priceColumn("MARK PRICE", "Mark", current?.markPrice ?: "--")
-        val index = priceColumn("INDEX PRICE", "Index", current?.indexPrice ?: "--")
+        val last = priceOption("LAST", "Trade", current?.lastPrice ?: "--")
+        val mark = priceOption("MARK", "Mark", current?.markPrice ?: "--")
+        val index = priceOption("INDEX", "Index", current?.indexPrice ?: "--")
         lastPriceView = last.second; markPriceView = mark.second; indexPriceView = index.second
-        listOf(last.first, mark.first, index.first).forEach { line.addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
-        prices.addView(line); body.addView(prices)
+        listOf(last, mark, index).forEach { (option, _) ->
+            prices.addView(option, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        fun highlightPriceType() {
+            listOf("Trade", "Mark", "Index").forEachIndexed { i, type ->
+                prices.getChildAt(i).setBackgroundColor(
+                    if (priceType == type) Color.rgb(42, 65, 88) else Color.TRANSPARENT)
+            }
+        }
+        highlightPriceType()
+        body.addView(prices)
         countdownView = txt("00:00", 10f, Color.rgb(255, 209, 102), true).apply {
             gravity = Gravity.END
             setPadding(0, dp(3), dp(6), dp(3))
@@ -264,26 +279,23 @@ class MainActivity : Activity() {
             isHorizontalScrollBarEnabled = false
             addView(tf)
         }
-        val timeframes = listOf("1m" to "1", "3m" to "3", "5m" to "5", "15m" to "15", "30m" to "30", "1h" to "60", "2h" to "120", "4h" to "240", "6h" to "360", "12h" to "720", "1D" to "D", "1W" to "W", "1M" to "M")
+        val timeframes = listOf("1m" to "1", "5m" to "5", "15m" to "15", "1h" to "60", "4h" to "240", "1D" to "D")
         timeframes.forEach { (label, value) ->
             val button = TextView(this).apply {
-                text = label; textSize = 10f; gravity = Gravity.CENTER
+                text = label; textSize = 11f; gravity = Gravity.CENTER
                 setTextColor(if (interval == value) Color.WHITE else muted)
-                setPadding(dp(9), dp(9), dp(9), dp(9))
+                setPadding(dp(13), dp(9), dp(13), dp(9))
                 setBackgroundColor(if (interval == value) Color.rgb(42, 65, 88) else panel)
-                setOnClickListener {
-                    interval = value
-                    screen("Chart")
-                }
+                setOnClickListener { interval = value; screen("Chart") }
             }
-            tf.addView(button, LinearLayout.LayoutParams(-2, dp(36)))
+            tf.addView(button, LinearLayout.LayoutParams(-2, dp(38)))
         }
         tf.addView(TextView(this).apply {
-            text = "＋"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            setPadding(dp(10), 0, dp(10), 0)
+            text = "＋"; textSize = 19f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            setPadding(dp(13), 0, dp(13), 0); setBackgroundColor(panel)
             setOnClickListener { customTimeframeDialog() }
-        }, LinearLayout.LayoutParams(-2, dp(36)))
-        body.addView(tfScroll, LinearLayout.LayoutParams(-1, dp(34))); gap(body, 2)
+        }, LinearLayout.LayoutParams(-2, dp(38)))
+        body.addView(tfScroll, LinearLayout.LayoutParams(-1, dp(38))); gap(body, 2)
         val web = WebView(this).apply {
             setBackgroundColor(Color.rgb(9, 14, 22))
             settings.javaScriptEnabled = true
@@ -297,19 +309,62 @@ class MainActivity : Activity() {
             loadUrl("file:///android_asset/chart.html")
         }
         chartWeb = web
-        body.addView(web, LinearLayout.LayoutParams(-1, 0, 1f))
-        gap(body, 3)
-        val terminalActions = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER }
-        terminalActions.addView(Button(this).apply {
-            text = "＋ Alert"; isAllCaps = false
-            setOnClickListener { screen("Alerts") }
-        }, LinearLayout.LayoutParams(0, dp(40), 1f))
-        terminalActions.addView(Button(this).apply {
-            text = if (fullScreen) "Exit full screen" else "Landscape"
-            isAllCaps = false
-            setOnClickListener { toggleFullScreen() }
-        }, LinearLayout.LayoutParams(0, dp(40), 1f))
-        body.addView(terminalActions)
+        val chartFrame = FrameLayout(this)
+        chartFrame.addView(web, FrameLayout.LayoutParams(-1, -1))
+        val alertPlus = TextView(this).apply {
+            text = "+"
+            textSize = 27f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(25, 177, 139))
+            elevation = dp(8).toFloat()
+            setPadding(0, 0, 0, dp(2))
+        }
+        val plusSize = dp(48)
+        val plusParams = FrameLayout.LayoutParams(plusSize, plusSize, Gravity.END or Gravity.TOP).apply {
+            rightMargin = dp(14); topMargin = dp(18)
+        }
+        chartFrame.addView(alertPlus, plusParams)
+        var downX = 0f; var downY = 0f; var moved = false
+        alertPlus.setOnTouchListener { view, event ->
+            val lp = view.layoutParams as FrameLayout.LayoutParams
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX; downY = event.rawY; moved = false; true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - downX).toInt()
+                    val dy = (event.rawY - downY).toInt()
+                    if (kotlin.math.abs(dx) > dp(4) || kotlin.math.abs(dy) > dp(4)) moved = true
+                    if (moved) {
+                        lp.gravity = Gravity.TOP or Gravity.START
+                        lp.leftMargin = (lp.leftMargin + dx).coerceIn(0, (chartFrame.width - view.width).coerceAtLeast(0))
+                        lp.topMargin = (lp.topMargin + dy).coerceIn(0, (chartFrame.height - view.height).coerceAtLeast(0))
+                        view.layoutParams = lp
+                        downX = event.rawX; downY = event.rawY
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) {
+                        val yInChart = (view.y + view.height / 2f).coerceIn(0f, web.height.toFloat())
+                        web.evaluateJavascript("window.priceAtY($yInChart)") { result ->
+                            val suggested = result?.trim('"')?.toDoubleOrNull()?.let {
+                                java.math.BigDecimal(it).stripTrailingZeros().toPlainString()
+                            } ?: current?.let { if (priceType == "Mark") it.markPrice else if (priceType == "Index") it.indexPrice else it.lastPrice } ?: ""
+                            showChartAlertDialog(suggested)
+                        }
+                    }
+                    true
+                }
+                else -> true
+            }
+        }
+        body.addView(chartFrame, LinearLayout.LayoutParams(-1, 0, 1f))
+        current?.let { updatePriceLabels(it) }
+        marketData.selectChart(symbol, interval, priceType)
+    }
+
         current?.let { updatePriceLabels(it) }
         marketData.selectChart(symbol, interval, priceType)
     }
@@ -447,6 +502,44 @@ class MainActivity : Activity() {
         val item = JSONObject().put("time", candle.time).put("open", candle.open)
             .put("high", candle.high).put("low", candle.low).put("close", candle.close)
         chartWeb?.evaluateJavascript("window.updateCandle($item)", null)
+    }
+
+    private fun showChartAlertDialog(suggestedPrice: String) {
+        val input = EditText(this).apply {
+            hint = "Target price"
+            setText(suggestedPrice)
+            setTextColor(Color.WHITE)
+            setHintTextColor(muted)
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            isSingleLine = true
+        }
+        val condition = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("Crosses above", "Crosses below"))
+        }
+        val content = LinearLayout(this).apply {
+            orientation = 1
+            setPadding(dp(18), dp(8), dp(18), dp(4))
+            addView(txt("Symbol: $symbol", 12f, muted))
+            addView(txt("Alert price", 11f, muted, true))
+            addView(input, LinearLayout.LayoutParams(-1, dp(48)))
+            addView(condition, LinearLayout.LayoutParams(-1, dp(48)))
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Create chart alert")
+            .setView(content)
+            .setPositiveButton("Save") { _, _ ->
+                val target = input.text.toString().trim()
+                if (target.toDoubleOrNull() == null) {
+                    Toast.makeText(this, "Enter a valid price", Toast.LENGTH_SHORT).show()
+                } else {
+                    prefs.edit().putString("alert_" + System.currentTimeMillis(),
+                        symbol + "|" + target + "|" + condition.selectedItem.toString()).apply()
+                    Toast.makeText(this, "Alert saved on device", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun alerts() {
