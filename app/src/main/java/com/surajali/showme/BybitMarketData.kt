@@ -59,7 +59,8 @@ class BybitMarketData(
 
     fun start() {
         closed = false
-        loadInstruments(null, mutableListOf())
+        // Load the complete ticker snapshot first; do not block the watchlist on paginated instruments.
+        loadTickers()
     }
 
     private fun loadInstruments(cursor: String?, collected: MutableList<String>) {
@@ -135,7 +136,7 @@ class BybitMarketData(
 
     private fun mergeTicker(json: JSONObject) {
         val symbol = json.optString("symbol")
-        if (symbol.isBlank()) return
+        if (symbol.isBlank() || !symbol.endsWith("USDT")) return
         val old = marketMap[symbol] ?: MarketSymbol(symbol)
         marketMap[symbol] = MarketSymbol(
             symbol = symbol,
@@ -217,7 +218,8 @@ class BybitMarketData(
     }
 
     private fun subscribeTickers(ws: WebSocket) {
-        val symbols = marketMap.keys.toList()
+        val symbols = marketMap.values.sortedByDescending { it.turnover24h }.take(100).map { it.symbol }.toMutableList()
+        if (activeSymbol.isNotBlank() && activeSymbol !in symbols) symbols.add(activeSymbol)
         symbols.chunked(10).forEachIndexed { index, batch ->
             main.postDelayed({
                 if (socketConnected && !closed) {
@@ -287,7 +289,9 @@ class BybitMarketData(
     }
 
     private fun loadHistory(symbol: String, interval: String) {
-        val url = "https://api.bybit.com/v5/market/kline?category=linear&symbol=$symbol&interval=$interval&limit=200"
+        val customMinutes = interval.toIntOrNull()
+        val apiInterval = if (customMinutes != null && customMinutes !in listOf(1, 3, 5, 15, 30, 60, 120, 240, 360, 720)) "1" else interval
+        val url = "https://api.bybit.com/v5/market/kline?category=linear&symbol=$symbol&interval=$apiInterval&limit=1000"
         client.newCall(Request.Builder().url(url).get().build()).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 status("Historical candles failed: " + (e.message ?: "network error"))
@@ -313,6 +317,14 @@ class BybitMarketData(
                             ))
                         }
                         candles.sortBy { c -> c.time }
+                        if (customMinutes != null && customMinutes > 1 && apiInterval == "1") {
+                            val seconds = customMinutes * 60L
+                            val grouped = candles.groupBy { it.time / seconds * seconds }.toSortedMap()
+                            val aggregated = grouped.map { (bucket, values) ->
+                                MarketCandle(bucket, values.first().open, values.maxOf { it.high }, values.minOf { it.low }, values.last().close)
+                            }
+                            candles.clear(); candles.addAll(aggregated)
+                        }
                         synchronized(this@BybitMarketData) {
                             val latest = candles.lastOrNull()
                             val live = currentTradeCandle
