@@ -43,7 +43,8 @@ class BybitMarketData(
     private var socket: WebSocket? = null
     private var activeSymbol = ""
     private var activeInterval = "1"
-    private var activeKlineTopic = ""
+    private var activeTradeTopic = ""
+    @Volatile private var currentTradeCandle: MarketCandle? = null
     private val heartbeat = object : Runnable {
         override fun run() {
             if (!closed && socketConnected) {
@@ -167,7 +168,7 @@ class BybitMarketData(
                 main.postDelayed(heartbeat, 20_000L)
                 status("LIVE • Bybit WebSocket connected")
                 subscribeTickers(webSocket)
-                if (activeSymbol.isNotBlank()) subscribeKline(webSocket, activeSymbol, activeInterval)
+                if (activeSymbol.isNotBlank()) subscribeTrades(webSocket, activeSymbol)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -178,6 +179,9 @@ class BybitMarketData(
                         val data = json.opt("data")
                         if (data is JSONObject) mergeTicker(data)
                         else if (data is JSONArray) for (i in 0 until data.length()) mergeTicker(data.getJSONObject(i))
+                    } else if (topic.startsWith("publicTrade.")) {
+                        val trades = json.optJSONArray("data") ?: return
+                        for (i in 0 until trades.length()) processTrade(trades.getJSONObject(i))
                     } else if (topic.startsWith("kline.")) {
                         val data = json.optJSONArray("data") ?: return
                         for (i in 0 until data.length()) {
@@ -197,7 +201,7 @@ class BybitMarketData(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 socketConnected = false
-                activeKlineTopic = ""
+                activeTradeTopic = ""
                 main.removeCallbacks(heartbeat)
                 status("Live feed disconnected; reconnecting…")
                 scheduleReconnect()
@@ -228,18 +232,57 @@ class BybitMarketData(
     fun selectChart(symbol: String, interval: String) {
         activeSymbol = symbol
         activeInterval = interval
+        currentTradeCandle = null
         loadHistory(symbol, interval)
-        socket?.let { subscribeKline(it, symbol, interval) }
+        socket?.let { subscribeTrades(it, symbol) }
     }
 
-    private fun subscribeKline(ws: WebSocket, symbol: String, interval: String) {
-        val topic = "kline.$interval.$symbol"
-        if (activeKlineTopic == topic) return
-        if (activeKlineTopic.isNotBlank()) {
-            ws.send(JSONObject().put("op", "unsubscribe").put("args", JSONArray().put(activeKlineTopic)).toString())
+    private fun subscribeTrades(ws: WebSocket, symbol: String) {
+        val topic = "publicTrade.$symbol"
+        if (activeTradeTopic == topic) return
+        if (activeTradeTopic.isNotBlank()) {
+            ws.send(JSONObject().put("op", "unsubscribe").put("args", JSONArray().put(activeTradeTopic)).toString())
         }
-        activeKlineTopic = topic
+        activeTradeTopic = topic
         ws.send(JSONObject().put("op", "subscribe").put("args", JSONArray().put(topic)).toString())
+    }
+
+    @Synchronized
+    private fun processTrade(trade: JSONObject) {
+        val tradeTime = trade.optLong("T") / 1000L
+        val price = trade.optString("p").toDoubleOrNull() ?: return
+        if (tradeTime <= 0L) return
+        val bucket = candleBucket(tradeTime, activeInterval)
+        val old = currentTradeCandle
+        val updated = when {
+            old == null || bucket > old.time -> MarketCandle(bucket, price, price, price, price)
+            bucket == old.time -> MarketCandle(bucket, old.open, maxOf(old.high, price), minOf(old.low, price), price)
+            else -> return
+        }
+        currentTradeCandle = updated
+        val selected = activeSymbol
+        main.post { onLiveCandle(selected, updated) }
+    }
+
+    private fun candleBucket(epochSeconds: Long, interval: String): Long {
+        val minutes = interval.toLongOrNull()
+        if (minutes != null) {
+            val seconds = minutes * 60L
+            return epochSeconds / seconds * seconds
+        }
+        if (interval == "D") return epochSeconds / 86400L * 86400L
+        if (interval == "W") {
+            val mondayEpoch = 345600L
+            return mondayEpoch + Math.floorDiv(epochSeconds - mondayEpoch, 604800L) * 604800L
+        }
+        val calendar = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        calendar.timeInMillis = epochSeconds * 1000L
+        calendar.set(java.util.Calendar.DAY_OF_MONTH, 1)
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        calendar.set(java.util.Calendar.MINUTE, 0)
+        calendar.set(java.util.Calendar.SECOND, 0)
+        calendar.set(java.util.Calendar.MILLISECOND, 0)
+        return calendar.timeInMillis / 1000L
     }
 
     private fun loadHistory(symbol: String, interval: String) {
@@ -269,6 +312,9 @@ class BybitMarketData(
                             ))
                         }
                         candles.sortBy { c -> c.time }
+                        synchronized(this@BybitMarketData) {
+                            currentTradeCandle = candles.lastOrNull()
+                        }
                         main.post { onHistory(symbol, candles) }
                     } catch (e: Exception) {
                         status("Candle parse error: " + (e.message ?: ""))
