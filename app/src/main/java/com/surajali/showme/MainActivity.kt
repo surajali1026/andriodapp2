@@ -131,10 +131,11 @@ class MainActivity : Activity() {
         gap(body, 10)
         val search = EditText(this).apply {
             hint = "Search futures symbol"; setHintTextColor(muted); setTextColor(Color.WHITE)
-            singleLine = true; setPadding(dp(12), 0, dp(12), 0); setBackgroundColor(panel)
+            isSingleLine = true; setPadding(dp(12), 0, dp(12), 0); setBackgroundColor(panel)
         }
         body.addView(search, LinearLayout.LayoutParams(-1, dp(46)))
         gap(body, 8)
+        val rows = LinearLayout(this).apply { orientation = 1 }
         val filters = LinearLayout(this).apply { orientation = 0 }
         listOf("All", "Top 100", "Top Gainer", "Top Loser").forEach { label ->
             val button = TextView(this).apply {
@@ -148,7 +149,6 @@ class MainActivity : Activity() {
         }
         body.addView(filters)
         gap(body, 8)
-        val rows = LinearLayout(this).apply { orientation = 1 }
         val scroll = ScrollView(this)
         scroll.addView(rows)
         body.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -282,7 +282,7 @@ class MainActivity : Activity() {
         body.addView(txt("Create and manage alert rules", 12f, muted)); gap(body, 10)
         val box = card()
         box.addView(txt("SYMBOL", 10f, muted, true))
-        val sym = EditText(this).apply { setText(symbol); setTextColor(Color.WHITE); singleLine = true }
+        val sym = EditText(this).apply { setText(symbol); setTextColor(Color.WHITE); isSingleLine = true }
         box.addView(sym)
         box.addView(txt("TRIGGER PRICE", 10f, muted, true))
         val price = EditText(this).apply {
