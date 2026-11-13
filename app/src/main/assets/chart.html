@@ -23,15 +23,46 @@ toolsPanel.addEventListener('pointerdown',()=>clearTimeout(toolHideTimer));
 toolsPanel.addEventListener('pointerup',()=>{clearTimeout(toolHideTimer);toolHideTimer=setTimeout(()=>toolsPanel.classList.remove('open'),5000)});
 function init(){if(!window.LightweightCharts||chart)return;chart=LightweightCharts.createChart(el,{width:el.clientWidth,height:el.clientHeight,layout:{background:{type:'solid',color:'#090e16'},textColor:'#9aa8ba'},grid:{vertLines:{color:'#172231'},horzLines:{color:'#172231'}},rightPriceScale:{borderColor:'#263448'},timeScale:{borderColor:'#263448',timeVisible:true,secondsVisible:false},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true}});series=chart.addSeries(LightweightCharts.CandlestickSeries,{upColor:'#20c997',downColor:'#ef5350',borderUpColor:'#20c997',borderDownColor:'#ef5350',wickUpColor:'#20c997',wickDownColor:'#ef5350'});new ResizeObserver(resize).observe(document.getElementById('stage'));resize()}
 function resize(){if(!chart)return;chart.applyOptions({width:el.clientWidth,height:el.clientHeight});const w=canvas.clientWidth,h=canvas.clientHeight;canvas.width=Math.round(w*devicePixelRatio);canvas.height=Math.round(h*devicePixelRatio);ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);paint()}
-function setCandles(items){init();if(series){series.setData(items);chart.timeScale().fitContent()}}
-function updateCandle(item){init();if(series)series.update(item)}
+function setCandles(items){
+ init();if(!series)return;
+ const scale=chart.timeScale();
+ const previous=scale.getVisibleLogicalRange();
+ const wasAtLive=previous?previous.to>=Math.max(0,series.data().length-3):true;
+ series.setData(items);
+ if(previous){try{scale.setVisibleLogicalRange(previous)}catch(_){scale.fitContent()}}
+ else {scale.fitContent();scale.scrollToRealTime()}
+ if(wasAtLive)scale.scrollToRealTime();
+}
+function updateCandle(item){
+ init();if(!series)return;
+ const range=chart.timeScale().getVisibleLogicalRange();
+ const atLive= !range || range.to>=Math.max(0,series.data().length-3);
+ series.update(item);
+ if(atLive)chart.timeScale().scrollToRealTime();
+}
 function xy(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
 function paint(){if(!ctx)return;ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);const drawOne=(s,i)=>{ctx.strokeStyle=i===selected?'#ffd166':'#43b8ff';ctx.lineWidth=i===selected?2.4:2;ctx.setLineDash(s.type==='hline'?[7,5]:[]);ctx.beginPath();if(s.type==='hline'){ctx.moveTo(0,s.y1);ctx.lineTo(canvas.clientWidth,s.y1)}else if(s.type==='rect'){ctx.rect(s.x1,s.y1,s.x2-s.x1,s.y2-s.y1)}else{ctx.moveTo(s.x1,s.y1);ctx.lineTo(s.x2,s.y2)}ctx.stroke();ctx.setLineDash([])};shapes.forEach(drawOne);if(draft)drawOne(draft,-1)}
 function hit(p){for(let i=shapes.length-1;i>=0;i--){const s=shapes[i],minX=Math.min(s.x1,s.x2),maxX=Math.max(s.x1,s.x2),minY=Math.min(s.y1,s.y2),maxY=Math.max(s.y1,s.y2);if(s.type==='hline'&&Math.abs(p.y-s.y1)<12)return i;if(s.type==='rect'&&p.x>=minX-10&&p.x<=maxX+10&&p.y>=minY-10&&p.y<=maxY+10)return i;if(s.type==='trend'){const dx=s.x2-s.x1,dy=s.y2-s.y1,t=dx===0?0:(p.x-s.x1)/dx,yy=s.y1+t*dy;if(t>=-.05&&t<=1.05&&Math.abs(p.y-yy)<12)return i}}return -1}
 function pointFromClient(clientX,clientY){const r=canvas.getBoundingClientRect();return{x:clientX-r.left,y:clientY-r.top}}
 function beginAt(p){if(tool==='cursor')return;activePointer=1;if(tool==='move'){selected=hit(p);if(selected>=0&&!locked){dragging=true;dragStart=p;draft={...shapes[selected]}}paint();return}selected=-1;draft={type:tool,x1:p.x,y1:p.y,x2:p.x,y2:p.y};paint()}
 function moveAt(p){if(activePointer===null||!draft)return;if(dragging&&selected>=0){const dx=p.x-dragStart.x,dy=p.y-dragStart.y,s=shapes[selected];s.x1=draft.x1+dx;s.x2=draft.x2+dx;s.y1=draft.y1+dy;s.y2=draft.y2+dy}else{draft.x2=p.x;draft.y2=tool==='hline'?draft.y1:p.y}paint()}
-function finishAt(){if(activePointer===null)return;if(dragging){dragging=false;draft=null}else if(draft){if(tool==='hline')draft.y2=draft.y1;if(tool==='hline'||Math.hypot(draft.x2-draft.x1,draft.y2-draft.y1)>5){shapes.push({...draft});selected=shapes.length-1}draft=null}activePointer=null;paint()}
+function finishAt(){
+ if(activePointer===null)return;
+ let completed=false;
+ if(dragging){dragging=false;draft=null}
+ else if(draft){
+  if(tool==='hline')draft.y2=draft.y1;
+  if(tool==='hline'||Math.hypot(draft.x2-draft.x1,draft.y2-draft.y1)>5){shapes.push({...draft});selected=shapes.length-1;completed=true}
+  draft=null;
+ }
+ activePointer=null;paint();
+ if(completed && tool!=='move') {
+  tool='cursor';
+  document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool==='cursor'));
+  canvas.style.pointerEvents='none';canvas.style.touchAction='auto';
+  toolsPanel.classList.remove('open');clearTimeout(toolHideTimer);
+ }
+}
 // Native Android WebView touch path. Do not depend on PointerEvent capture.
 canvas.addEventListener('touchstart',e=>{if(tool==='cursor')return;e.preventDefault();e.stopPropagation();const t=e.changedTouches[0];beginAt(pointFromClient(t.clientX,t.clientY))},{passive:false});
 canvas.addEventListener('touchmove',e=>{if(activePointer===null)return;e.preventDefault();e.stopPropagation();const t=e.changedTouches[0];moveAt(pointFromClient(t.clientX,t.clientY))},{passive:false});
@@ -41,6 +72,12 @@ canvas.addEventListener('touchcancel',e=>{if(activePointer!==null){e.preventDefa
 canvas.addEventListener('mousedown',e=>{if(tool==='cursor')return;e.preventDefault();beginAt(pointFromClient(e.clientX,e.clientY))});
 window.addEventListener('mousemove',e=>{if(activePointer!==null&&e.buttons)moveAt(pointFromClient(e.clientX,e.clientY))});
 window.addEventListener('mouseup',()=>finishAt());
+window.addAlertLine=function(price){
+ if(!series)return;
+ const value=Number(price);if(!Number.isFinite(value))return;
+ const line=series.createPriceLine({price:value,color:'#f5c451',lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'ALERT'});
+ window._alertLines=window._alertLines||[];window._alertLines.push(line);
+};
 window.priceAtY=function(y){if(!series||!chart)return null;const value=series.coordinateToPrice(Number(y));return value==null?null:Number(value)};
 document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;document.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('active',x===b));canvas.style.pointerEvents=tool==='cursor'?'none':'auto';canvas.style.touchAction=tool==='cursor'?'auto':'none';canvas.style.pointerEvents=tool==='cursor'?'none':'auto';showTools()});
 document.getElementById('lock').onclick=e=>{locked=!locked;e.target.textContent=locked?'Locked':'Unlock';showTools()};
