@@ -218,10 +218,36 @@ class MainActivity : Activity() {
         val current = marketSymbols.firstOrNull { it.symbol == symbol }
         val chartHead = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
         val symbolTitle = txt(symbol + "  ▾", 17f, Color.WHITE, true).apply {
-            setPadding(dp(5), dp(5), dp(12), dp(5))
+            setPadding(dp(5), dp(5), dp(8), dp(5))
             setOnClickListener { showSymbolPicker() }
         }
-        chartHead.addView(symbolTitle, LinearLayout.LayoutParams(0, dp(38), 1f))
+        chartHead.addView(symbolTitle, LinearLayout.LayoutParams(0, dp(42), 1f))
+        val selectedPrice = when (priceType) {
+            "Mark" -> current?.markPrice
+            "Index" -> current?.indexPrice
+            else -> current?.lastPrice
+        } ?: "--"
+        val priceMenuButton = TextView(this).apply {
+            text = (if (priceType == "Trade") "LAST" else priceType.uppercase()) + "  " + selectedPrice + "  ▾"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(9), dp(10), dp(9))
+            setBackgroundColor(Color.rgb(42, 65, 88))
+            setOnClickListener { anchor ->
+                val popup = PopupMenu(this@MainActivity, anchor)
+                listOf("Last Price" to "Trade", "Mark Price" to "Mark", "Index Price" to "Index").forEach { (label, type) ->
+                    popup.menu.add(label).setOnMenuItemClickListener {
+                        priceType = type
+                        marketData.selectChart(symbol, interval, priceType)
+                        screen("Chart")
+                        true
+                    }
+                }
+                popup.show()
+            }
+        }
+        chartHead.addView(priceMenuButton, LinearLayout.LayoutParams(-2, dp(38)))
         chartHead.addView(Button(this).apply {
             text = if (fullScreen) "Exit" else "⛶"
             isAllCaps = false
@@ -231,43 +257,6 @@ class MainActivity : Activity() {
         body.addView(chartHead)
         body.addView(txt("USDT Perpetual • Bybit live feed", 10f, muted))
         gap(body, 4)
-        // Compact Last / Mark / Index segmented selector.
-        val prices = LinearLayout(this).apply {
-            orientation = 0
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            setBackgroundColor(panel)
-        }
-        fun priceOption(label: String, type: String, initial: String): Pair<LinearLayout, TextView> {
-            val value = txt(initial, 13f, Color.WHITE, true)
-            val option = LinearLayout(this).apply {
-                orientation = 1
-                gravity = Gravity.CENTER
-                setPadding(dp(5), dp(7), dp(5), dp(7))
-                setOnClickListener {
-                    priceType = type
-                    marketData.selectChart(symbol, interval, priceType)
-                    screen("Chart")
-                }
-                addView(txt(label, 9f, muted, true))
-                addView(value)
-            }
-            return Pair(option, value)
-        }
-        val last = priceOption("LAST", "Trade", current?.lastPrice ?: "--")
-        val mark = priceOption("MARK", "Mark", current?.markPrice ?: "--")
-        val index = priceOption("INDEX", "Index", current?.indexPrice ?: "--")
-        lastPriceView = last.second; markPriceView = mark.second; indexPriceView = index.second
-        listOf(last, mark, index).forEach { (option, _) ->
-            prices.addView(option, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        fun highlightPriceType() {
-            listOf("Trade", "Mark", "Index").forEachIndexed { i, type ->
-                prices.getChildAt(i).setBackgroundColor(
-                    if (priceType == type) Color.rgb(42, 65, 88) else Color.TRANSPARENT)
-            }
-        }
-        highlightPriceType()
-        body.addView(prices)
         countdownView = txt("00:00", 10f, Color.rgb(255, 209, 102), true).apply {
             gravity = Gravity.END
             setPadding(0, dp(3), dp(6), dp(3))
