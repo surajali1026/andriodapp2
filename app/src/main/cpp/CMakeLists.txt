@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(showme_native_core)
+add_library(showme_native SHARED alert_engine.cpp)
+find_library(log-lib log)
+target_link_libraries(showme_native ${log-lib})
