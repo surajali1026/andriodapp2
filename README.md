@@ -7,9 +7,9 @@ SHOWME is a native Android market-watch and chart terminal.
 - No API key and no trading permissions are used.
 - Instrument catalogue is loaded from the public instruments endpoint, including pagination.
 - All, Top 100 (24h turnover), Top Gainer and Top Loser watchlist filters.
-- REST historical OHLC candles and live WebSocket Kline updates.
+- REST historical OHLC candles plus a live WebSocket public-trade stream aggregated into the active candle on every trade.
 - Live ticker fields: Last Price, Mark Price, Index Price, 24h change and turnover.
-- WebSocket subscriptions are paced and reconnect automatically.
+- WebSocket subscriptions are paced, heartbeat-enabled and reconnect automatically.
 
 ## Chart
 - TradingView Lightweight Charts (open-source chart renderer).
