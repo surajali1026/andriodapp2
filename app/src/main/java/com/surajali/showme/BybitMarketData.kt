@@ -200,10 +200,14 @@ class BybitMarketData(
 
     private fun subscribeTickers(ws: WebSocket) {
         val symbols = marketMap.keys.toList()
-        symbols.chunked(10).forEach { batch ->
-            val args = JSONArray()
-            batch.forEach { args.put("tickers.$it") }
-            ws.send(JSONObject().put("op", "subscribe").put("args", args).toString())
+        symbols.chunked(10).forEachIndexed { index, batch ->
+            main.postDelayed({
+                if (socketConnected && !closed) {
+                    val args = JSONArray()
+                    batch.forEach { args.put("tickers.$it") }
+                    ws.send(JSONObject().put("op", "subscribe").put("args", args).toString())
+                }
+            }, index * 120L)
         }
     }
 
