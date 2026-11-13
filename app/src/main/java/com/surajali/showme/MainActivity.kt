@@ -114,7 +114,7 @@ class MainActivity : Activity() {
                 if (fullScreen && tab == "Chart") 0 else dp(3))
             setBackgroundColor(bg)
         }
-        if (!(fullScreen && tab == "Chart")) {
+        if (tab != "Chart" && !(fullScreen && tab == "Chart")) {
             val head = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
             head.addView(txt("SHOWME", 20f, Color.WHITE, true), LinearLayout.LayoutParams(0, dp(36), 1f))
             head.addView(txt("● LIVE DATA", 10f, Color.rgb(40, 190, 130), true))
@@ -257,14 +257,12 @@ class MainActivity : Activity() {
             setOnClickListener { toggleFullScreen() }
         })
         body.addView(chartHead)
-        body.addView(txt("USDT Perpetual • Bybit live feed", 10f, muted))
-        gap(body, 4)
-        countdownView = txt("00:00", 10f, Color.rgb(255, 209, 102), true).apply {
+        countdownView = txt("00:00", 9f, Color.rgb(255, 209, 102), true).apply {
             gravity = Gravity.END
             setPadding(0, dp(3), dp(6), dp(3))
         }
         body.addView(countdownView!!)
-        gap(body, 3)
+        gap(body, 1)
         val tf = LinearLayout(this).apply { orientation = 0 }
         val tfScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -277,7 +275,17 @@ class MainActivity : Activity() {
                 setTextColor(if (interval == value) Color.WHITE else muted)
                 setPadding(dp(13), dp(9), dp(13), dp(9))
                 setBackgroundColor(if (interval == value) Color.rgb(42, 65, 88) else panel)
-                setOnClickListener { interval = value; screen("Chart") }
+                setOnClickListener {
+                    interval = value
+                    marketData.selectChart(symbol, interval, priceType)
+                    for (i in 0 until tf.childCount) {
+                        val child = tf.getChildAt(i) as? TextView ?: continue
+                        val active = child.text.toString() == label
+                        child.setTextColor(if (active) Color.WHITE else muted)
+                        child.setBackgroundColor(if (active) Color.rgb(42, 65, 88) else panel)
+                    }
+                    countdownView?.text = "Candle closes in  " + candleCountdown()
+                }
             }
             tf.addView(button, LinearLayout.LayoutParams(-2, dp(38)))
         }
@@ -528,7 +536,8 @@ class MainActivity : Activity() {
                 } else {
                     prefs.edit().putString("alert_" + System.currentTimeMillis(),
                         symbol + "|" + target + "|" + condition.selectedItem.toString()).apply()
-                    Toast.makeText(this, "Alert saved on device", Toast.LENGTH_SHORT).show()
+                    chartWeb?.evaluateJavascript("window.addAlertLine && window.addAlertLine($target)", null)
+                    Toast.makeText(this, "Alert level saved on chart", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
