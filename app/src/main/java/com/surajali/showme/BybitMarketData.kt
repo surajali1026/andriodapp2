@@ -44,6 +44,14 @@ class BybitMarketData(
     private var activeSymbol = ""
     private var activeInterval = "1"
     private var activeKlineTopic = ""
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            if (!closed && socketConnected) {
+                socket?.send(JSONObject().put("op", "ping").toString())
+                main.postDelayed(this, 20_000L)
+            }
+        }
+    }
     private var reconnectAttempt = 0
     @Volatile private var socketConnected = false
     @Volatile private var closed = false
@@ -155,6 +163,8 @@ class BybitMarketData(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 reconnectAttempt = 0
                 socketConnected = true
+                main.removeCallbacks(heartbeat)
+                main.postDelayed(heartbeat, 20_000L)
                 status("LIVE • Bybit WebSocket connected")
                 subscribeTickers(webSocket)
                 if (activeSymbol.isNotBlank()) subscribeKline(webSocket, activeSymbol, activeInterval)
@@ -187,12 +197,16 @@ class BybitMarketData(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 socketConnected = false
+                activeKlineTopic = ""
+                main.removeCallbacks(heartbeat)
                 status("Live feed disconnected; reconnecting…")
                 scheduleReconnect()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 socketConnected = false
+                activeKlineTopic = ""
+                main.removeCallbacks(heartbeat)
                 if (!closed) scheduleReconnect()
             }
         })
@@ -274,6 +288,7 @@ class BybitMarketData(
 
     fun stop() {
         closed = true
+        main.removeCallbacks(heartbeat)
         socket?.close(1000, "App stopped")
         socket = null
         client.dispatcher.cancelAll()
