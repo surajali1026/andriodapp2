@@ -20,6 +20,7 @@ class MainActivity : Activity() {
     private val panel = Color.rgb(24, 32, 45)
     private val muted = Color.rgb(145, 158, 176)
     private lateinit var body: LinearLayout
+    private var statusView: TextView? = null
     private lateinit var marketData: BybitMarketData
     private var symbol = "BTCUSDT"
     private var interval = "1"
@@ -70,6 +71,7 @@ class MainActivity : Activity() {
             },
             onStatus = { status ->
                 marketStatus = status
+                statusView?.text = status
             }
         )
         screen("Quotes")
@@ -93,7 +95,8 @@ class MainActivity : Activity() {
         head.addView(txt("SHOWME", 20f, Color.WHITE, true), LinearLayout.LayoutParams(0, dp(36), 1f))
         head.addView(txt("● LIVE DATA", 10f, Color.rgb(40, 190, 130), true))
         root.addView(head)
-        root.addView(txt(marketStatus, 10f, muted))
+        statusView = txt(marketStatus, 10f, muted)
+        root.addView(statusView)
         gap(root, 10)
         body = LinearLayout(this).apply { orientation = 1 }
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
