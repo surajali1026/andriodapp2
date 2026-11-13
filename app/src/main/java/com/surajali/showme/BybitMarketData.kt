@@ -396,7 +396,7 @@ class BybitMarketData(
     }
     @Synchronized
     private fun processTrade(trade: JSONObject) {
-        if (trade.optString("s") != activeSymbol) return
+        if (activePriceType != "Trade" || trade.optString("s") != activeSymbol) return
         val tradeTime = trade.optLong("T") / 1000L
         val price = trade.optString("p").toDoubleOrNull() ?: return
         if (tradeTime <= 0L) return
