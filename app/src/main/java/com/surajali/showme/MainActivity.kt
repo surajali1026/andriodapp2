@@ -1,6 +1,9 @@
 package com.surajali.showme
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
@@ -32,6 +35,16 @@ class MainActivity : Activity() {
     private var indexPriceView: TextView? = null
     private var chartWeb: WebView? = null
     private var chartReady = false
+    private var countdownView: TextView? = null
+    private var fullScreen = false
+    private var priceType = "Trade"
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val countdownTask = object : Runnable {
+        override fun run() {
+            countdownView?.text = "Candle closes in  " + candleCountdown()
+            uiHandler.postDelayed(this, 1000L)
+        }
+    }
     private var pendingCandles: List<MarketCandle> = emptyList()
     private var activeTab = "All"
     private val prefs by lazy { getSharedPreferences("alerts", MODE_PRIVATE) }
@@ -76,9 +89,11 @@ class MainActivity : Activity() {
         )
         screen("Quotes")
         marketData.start()
+        uiHandler.post(countdownTask)
     }
 
     override fun onDestroy() {
+        uiHandler.removeCallbacks(countdownTask)
         if (::marketData.isInitialized) marketData.stop()
         chartWeb?.destroy()
         super.onDestroy()
@@ -89,7 +104,7 @@ class MainActivity : Activity() {
         chartWeb = null
         quoteRows.clear()
         val root = LinearLayout(this).apply {
-            orientation = 1; setPadding(dp(16), dp(18), dp(16), dp(8)); setBackgroundColor(bg)
+            orientation = 1; setPadding(dp(8), dp(8), dp(8), dp(3)); setBackgroundColor(bg)
         }
         val head = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
         head.addView(txt("SHOWME", 20f, Color.WHITE, true), LinearLayout.LayoutParams(0, dp(36), 1f))
@@ -190,23 +205,35 @@ class MainActivity : Activity() {
 
     private fun chart() {
         val current = marketSymbols.firstOrNull { it.symbol == symbol }
-        body.addView(txt(symbol, 22f, Color.WHITE, true))
-        body.addView(txt("USDT Perpetual • Bybit live feed", 11f, muted))
-        gap(body, 8)
+        val chartHead = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
+        chartHead.addView(txt(symbol, 19f, Color.WHITE, true), LinearLayout.LayoutParams(0, dp(38), 1f))
+        chartHead.addView(Button(this).apply { text = "◀"; minWidth = dp(38); setOnClickListener { changeCoin(-1) } })
+        chartHead.addView(Button(this).apply { text = "▶"; minWidth = dp(38); setOnClickListener { changeCoin(1) } })
+        chartHead.addView(Button(this).apply { text = if (fullScreen) "Exit" else "⛶"; isAllCaps = false; setOnClickListener { toggleFullScreen() } })
+        body.addView(chartHead)
+        body.addView(txt("USDT Perpetual • Bybit live feed", 10f, muted))
+        gap(body, 4)
         val prices = card()
         val line = LinearLayout(this).apply { orientation = 0 }
-        fun priceColumn(label: String): Pair<LinearLayout, TextView> {
-            val value = txt(current?.lastPrice ?: "--", 15f, Color.WHITE, true)
+        fun priceColumn(label: String, type: String, initial: String): Pair<LinearLayout, TextView> {
+            val value = txt(initial, 14f, Color.WHITE, true)
             val column = LinearLayout(this).apply {
                 orientation = 1
+                setPadding(dp(5), dp(5), dp(3), dp(5))
+                setBackgroundColor(if (priceType == type) Color.rgb(42, 65, 88) else panel)
                 addView(txt(label, 9f, muted, true))
                 addView(value)
+                setOnClickListener {
+                    priceType = type
+                    marketData.selectChart(symbol, interval, priceType)
+                    screen("Chart")
+                }
             }
             return Pair(column, value)
         }
-        val last = priceColumn("LAST PRICE")
-        val mark = priceColumn("MARK PRICE")
-        val index = priceColumn("INDEX PRICE")
+        val last = priceColumn("LAST PRICE", "Trade", current?.lastPrice ?: "--")
+        val mark = priceColumn("MARK PRICE", "Mark", current?.markPrice ?: "--")
+        val index = priceColumn("INDEX PRICE", "Index", current?.indexPrice ?: "--")
         lastPriceView = last.second; markPriceView = mark.second; indexPriceView = index.second
         listOf(last.first, mark.first, index.first).forEach { line.addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
         prices.addView(line); body.addView(prices); gap(body, 8)
@@ -229,7 +256,14 @@ class MainActivity : Activity() {
             }
             tf.addView(button, LinearLayout.LayoutParams(-2, dp(36)))
         }
-        body.addView(tfScroll, LinearLayout.LayoutParams(-1, dp(36))); gap(body, 8)
+        tf.addView(TextView(this).apply {
+            text = "＋"; textSize = 18f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+            setPadding(dp(10), 0, dp(10), 0)
+            setOnClickListener { customTimeframeDialog() }
+        }, LinearLayout.LayoutParams(-2, dp(36)))
+        body.addView(tfScroll, LinearLayout.LayoutParams(-1, dp(36))); gap(body, 3)
+        countdownView = txt("Candle closes in --:--", 10f, Color.rgb(255, 209, 102), true)
+        body.addView(countdownView!!)
         val web = WebView(this).apply {
             setBackgroundColor(Color.rgb(9, 14, 22))
             settings.javaScriptEnabled = true
@@ -244,14 +278,78 @@ class MainActivity : Activity() {
         }
         chartWeb = web
         body.addView(web, LinearLayout.LayoutParams(-1, 0, 1f))
-        gap(body, 6)
-        body.addView(txt(marketStatus, 10f, muted))
-        body.addView(Button(this).apply {
-            text = "＋ Create price alert"; isAllCaps = false
+        gap(body, 3)
+        val terminalActions = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER }
+        terminalActions.addView(Button(this).apply {
+            text = "＋ Alert"; isAllCaps = false
             setOnClickListener { screen("Alerts") }
-        }, LinearLayout.LayoutParams(-1, dp(44)))
+        }, LinearLayout.LayoutParams(0, dp(40), 1f))
+        terminalActions.addView(Button(this).apply {
+            text = if (fullScreen) "Vertical" else "Horizontal"; isAllCaps = false
+            setOnClickListener { toggleFullScreen() }
+        }, LinearLayout.LayoutParams(0, dp(40), 1f))
+        body.addView(terminalActions)
         current?.let { updatePriceLabels(it) }
-        marketData.selectChart(symbol, interval)
+        marketData.selectChart(symbol, interval, priceType)
+    }
+
+
+    private fun candleCountdown(): String {
+        val now = System.currentTimeMillis() / 1000L
+        val seconds = when (interval) {
+            "D" -> 86400L
+            "W" -> 604800L
+            "M" -> {
+                val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+                cal.timeInMillis = now * 1000L
+                cal.set(java.util.Calendar.DAY_OF_MONTH, 1); cal.add(java.util.Calendar.MONTH, 1)
+                cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+                cal.set(java.util.Calendar.SECOND, 0)
+                (cal.timeInMillis / 1000L) - now
+            }
+            else -> (interval.toLongOrNull() ?: 1L) * 60L
+        }
+        val remain = if (interval == "M") seconds else seconds - (now % seconds)
+        return String.format(java.util.Locale.US, "%02d:%02d", remain / 60L, remain % 60L)
+    }
+
+    private fun customTimeframeDialog() {
+        val input = EditText(this).apply {
+            hint = "Minutes (e.g. 2, 10, 45)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(interval.takeIf { it.toIntOrNull() != null } ?: "")
+        }
+        android.app.AlertDialog.Builder(this).setTitle("Custom timeframe").setView(input)
+            .setPositiveButton("Apply") { _, _ ->
+                val minutes = input.text.toString().toIntOrNull()
+                if (minutes == null || minutes !in 1..10080) {
+                    Toast.makeText(this, "Enter 1–10080 minutes", Toast.LENGTH_SHORT).show()
+                } else { interval = minutes.toString(); screen("Chart") }
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun changeCoin(direction: Int) {
+        if (marketSymbols.isEmpty()) return
+        val sorted = marketSymbols.sortedBy { it.symbol }
+        val current = sorted.indexOfFirst { it.symbol == symbol }.let { if (it < 0) 0 else it }
+        symbol = sorted[(current + direction + sorted.size) % sorted.size].symbol
+        screen("Chart")
+    }
+
+    @Suppress("DEPRECATION")
+    private fun toggleFullScreen() {
+        fullScreen = !fullScreen
+        if (fullScreen) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            window.decorView.systemUiVisibility = (android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+        } else {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
+        }
+        screen("Chart")
     }
 
     private fun updatePriceLabels(item: MarketSymbol) {
