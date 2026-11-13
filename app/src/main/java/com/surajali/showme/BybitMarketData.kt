@@ -1,0 +1,273 @@
+package com.surajali.showme
+
+import android.os.Handler
+import android.os.Looper
+import okhttp3.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
+
+data class MarketSymbol(
+    val symbol: String,
+    val lastPrice: String = "--",
+    val markPrice: String = "--",
+    val indexPrice: String = "--",
+    val change24h: Double = 0.0,
+    val turnover24h: Double = 0.0
+)
+
+data class MarketCandle(
+    val time: Long,
+    val open: Double,
+    val high: Double,
+    val low: Double,
+    val close: Double
+)
+
+class BybitMarketData(
+    private val onMarkets: (List<MarketSymbol>) -> Unit,
+    private val onTicker: (MarketSymbol) -> Unit,
+    private val onHistory: (String, List<MarketCandle>) -> Unit,
+    private val onLiveCandle: (String, MarketCandle) -> Unit,
+    private val onStatus: (String) -> Unit
+) {
+    private val main = Handler(Looper.getMainLooper())
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
+        .build()
+    private val marketMap = LinkedHashMap<String, MarketSymbol>()
+    private var socket: WebSocket? = null
+    private var activeSymbol = ""
+    private var activeInterval = "1"
+    private var activeKlineTopic = ""
+    private var reconnectAttempt = 0
+    @Volatile private var closed = false
+
+    fun start() {
+        closed = false
+        loadInstruments(null, mutableListOf())
+    }
+
+    private fun loadInstruments(cursor: String?, collected: MutableList<String>) {
+        val suffix = if (cursor.isNullOrBlank()) "" else "&cursor=" + URLEncoder.encode(cursor, "UTF-8")
+        val url = "https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000$suffix"
+        client.newCall(Request.Builder().url(url).get().build()).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                status("Instrument list failed: " + (e.message ?: "network error"))
+            }
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    val body = it.body?.string() ?: return
+                    try {
+                        val root = JSONObject(body)
+                        if (root.optInt("retCode", -1) != 0) {
+                            status("Bybit API: " + root.optString("retMsg"))
+                            return
+                        }
+                        val result = root.getJSONObject("result")
+                        val list = result.getJSONArray("list")
+                        for (i in 0 until list.length()) {
+                            val item = list.getJSONObject(i)
+                            if (item.optString("status") == "Trading" &&
+                                item.optString("quoteCoin") == "USDT" &&
+                                item.optString("contractType").contains("Perpetual")) {
+                                collected.add(item.optString("symbol"))
+                            }
+                        }
+                        val next = result.optString("nextPageCursor")
+                        if (next.isNotBlank()) {
+                            loadInstruments(next, collected)
+                        } else {
+                            collected.distinct().forEach { symbol ->
+                                marketMap[symbol] = MarketSymbol(symbol)
+                            }
+                            loadTickers()
+                        }
+                    } catch (e: Exception) {
+                        status("Could not parse Bybit symbols: " + (e.message ?: ""))
+                    }
+                }
+            }
+        })
+    }
+
+    private fun loadTickers() {
+        val request = Request.Builder()
+            .url("https://api.bybit.com/v5/market/tickers?category=linear")
+            .get().build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                publishMarkets()
+                status("Symbols loaded; ticker REST failed, connecting live feed")
+                connectSocket()
+            }
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    try {
+                        val root = JSONObject(it.body?.string() ?: "{}")
+                        val list = root.getJSONObject("result").getJSONArray("list")
+                        for (i in 0 until list.length()) mergeTicker(list.getJSONObject(i))
+                        publishMarkets()
+                        connectSocket()
+                    } catch (e: Exception) {
+                        publishMarkets()
+                        status("Symbols loaded; ticker parse issue")
+                        connectSocket()
+                    }
+                }
+            }
+        })
+    }
+
+    private fun mergeTicker(json: JSONObject) {
+        val symbol = json.optString("symbol")
+        if (symbol.isBlank()) return
+        val old = marketMap[symbol] ?: MarketSymbol(symbol)
+        marketMap[symbol] = MarketSymbol(
+            symbol = symbol,
+            lastPrice = json.optString("lastPrice", old.lastPrice).ifBlank { old.lastPrice },
+            markPrice = json.optString("markPrice", old.markPrice).ifBlank { old.markPrice },
+            indexPrice = json.optString("indexPrice", old.indexPrice).ifBlank { old.indexPrice },
+            change24h = json.optString("price24hPcnt").toDoubleOrNull() ?: old.change24h,
+            turnover24h = json.optString("turnover24h").toDoubleOrNull() ?: old.turnover24h
+        )
+        val updated = marketMap[symbol]!!
+        main.post { onTicker(updated) }
+    }
+
+    private fun publishMarkets() {
+        val copy = synchronized(marketMap) { marketMap.values.toList() }
+        main.post { onMarkets(copy); onStatus("Connected to Bybit public market data") }
+    }
+
+    private fun connectSocket() {
+        if (closed) return
+        status("Connecting live WebSocket…")
+        val request = Request.Builder()
+            .url("wss://stream.bybit.com/v5/public/linear")
+            .build()
+        socket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                reconnectAttempt = 0
+                status("LIVE • Bybit WebSocket connected")
+                subscribeTickers(webSocket)
+                if (activeSymbol.isNotBlank()) subscribeKline(webSocket, activeSymbol, activeInterval)
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    val json = JSONObject(text)
+                    val topic = json.optString("topic")
+                    if (topic.startsWith("tickers.")) {
+                        val data = json.opt("data")
+                        if (data is JSONObject) mergeTicker(data)
+                        else if (data is JSONArray) for (i in 0 until data.length()) mergeTicker(data.getJSONObject(i))
+                    } else if (topic.startsWith("kline.")) {
+                        val data = json.optJSONArray("data") ?: return
+                        for (i in 0 until data.length()) {
+                            val item = data.getJSONObject(i)
+                            val candle = MarketCandle(
+                                time = item.optLong("start") / 1000L,
+                                open = item.optString("open").toDoubleOrNull() ?: continue,
+                                high = item.optString("high").toDoubleOrNull() ?: continue,
+                                low = item.optString("low").toDoubleOrNull() ?: continue,
+                                close = item.optString("close").toDoubleOrNull() ?: continue
+                            )
+                            main.post { onLiveCandle(topic, candle) }
+                        }
+                    }
+                } catch (_: Exception) { }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                status("Live feed disconnected; reconnecting…")
+                scheduleReconnect()
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (!closed) scheduleReconnect()
+            }
+        })
+    }
+
+    private fun subscribeTickers(ws: WebSocket) {
+        val symbols = marketMap.keys.toList()
+        symbols.chunked(10).forEach { batch ->
+            val args = JSONArray()
+            batch.forEach { args.put("tickers.$it") }
+            ws.send(JSONObject().put("op", "subscribe").put("args", args).toString())
+        }
+    }
+
+    fun selectChart(symbol: String, interval: String) {
+        activeSymbol = symbol
+        activeInterval = interval
+        loadHistory(symbol, interval)
+        socket?.let { subscribeKline(it, symbol, interval) }
+    }
+
+    private fun subscribeKline(ws: WebSocket, symbol: String, interval: String) {
+        val topic = "kline.$interval.$symbol"
+        if (activeKlineTopic == topic) return
+        if (activeKlineTopic.isNotBlank()) {
+            ws.send(JSONObject().put("op", "unsubscribe").put("args", JSONArray().put(activeKlineTopic)).toString())
+        }
+        activeKlineTopic = topic
+        ws.send(JSONObject().put("op", "subscribe").put("args", JSONArray().put(topic)).toString())
+    }
+
+    private fun loadHistory(symbol: String, interval: String) {
+        val url = "https://api.bybit.com/v5/market/kline?category=linear&symbol=$symbol&interval=$interval&limit=200"
+        client.newCall(Request.Builder().url(url).get().build()).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                status("Historical candles failed: " + (e.message ?: "network error"))
+            }
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    try {
+                        val root = JSONObject(it.body?.string() ?: "{}")
+                        if (root.optInt("retCode", -1) != 0) {
+                            status("Kline API: " + root.optString("retMsg"))
+                            return
+                        }
+                        val list = root.getJSONObject("result").getJSONArray("list")
+                        val candles = mutableListOf<MarketCandle>()
+                        for (i in 0 until list.length()) {
+                            val row = list.getJSONArray(i)
+                            candles.add(MarketCandle(
+                                time = row.getString(0).toLong() / 1000L,
+                                open = row.getString(1).toDouble(),
+                                high = row.getString(2).toDouble(),
+                                low = row.getString(3).toDouble(),
+                                close = row.getString(4).toDouble()
+                            ))
+                        }
+                        candles.sortBy { c -> c.time }
+                        main.post { onHistory(symbol, candles) }
+                    } catch (e: Exception) {
+                        status("Candle parse error: " + (e.message ?: ""))
+                    }
+                }
+            }
+        })
+    }
+
+    private fun scheduleReconnect() {
+        if (closed) return
+        reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(6)
+        main.postDelayed({ if (!closed && socket?.isOpen != true) connectSocket() }, (1000L shl reconnectAttempt).coerceAtMost(30000L))
+    }
+
+    private fun status(message: String) = main.post { onStatus(message) }
+
+    fun stop() {
+        closed = true
+        socket?.close(1000, "App stopped")
+        socket = null
+        client.dispatcher.cancelAll()
+    }
+}
