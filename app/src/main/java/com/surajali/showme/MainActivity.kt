@@ -218,8 +218,9 @@ class MainActivity : Activity() {
     private fun chart() {
         val current = marketSymbols.firstOrNull { it.symbol == symbol }
         val chartHead = LinearLayout(this).apply { orientation = 0; gravity = Gravity.CENTER_VERTICAL }
-        val symbolTitle = txt(symbol + "  ▾", 17f, Color.WHITE, true).apply {
-            setPadding(dp(5), dp(5), dp(8), dp(5))
+        val symbolTitle = txt(symbol + "  ▾", 16f, Color.WHITE, true).apply {
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setBackgroundColor(panel)
             setOnClickListener { showSymbolPicker() }
         }
         chartHead.addView(symbolTitle, LinearLayout.LayoutParams(0, dp(42), 1f))
