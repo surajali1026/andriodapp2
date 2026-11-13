@@ -45,6 +45,7 @@ class BybitMarketData(
     private var activeInterval = "1"
     private var activeKlineTopic = ""
     private var reconnectAttempt = 0
+    @Volatile private var socketConnected = false
     @Volatile private var closed = false
 
     fun start() {
@@ -153,6 +154,7 @@ class BybitMarketData(
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 reconnectAttempt = 0
+                socketConnected = true
                 status("LIVE • Bybit WebSocket connected")
                 subscribeTickers(webSocket)
                 if (activeSymbol.isNotBlank()) subscribeKline(webSocket, activeSymbol, activeInterval)
@@ -177,18 +179,20 @@ class BybitMarketData(
                                 low = item.optString("low").toDoubleOrNull() ?: continue,
                                 close = item.optString("close").toDoubleOrNull() ?: continue
                             )
-                            main.post { onLiveCandle(topic, candle) }
+                            main.post { onLiveCandle(topic.substringAfterLast("."), candle) }
                         }
                     }
                 } catch (_: Exception) { }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                socketConnected = false
                 status("Live feed disconnected; reconnecting…")
                 scheduleReconnect()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                socketConnected = false
                 if (!closed) scheduleReconnect()
             }
         })
@@ -259,7 +263,7 @@ class BybitMarketData(
     private fun scheduleReconnect() {
         if (closed) return
         reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(6)
-        main.postDelayed({ if (!closed && socket?.isOpen != true) connectSocket() }, (1000L shl reconnectAttempt).coerceAtMost(30000L))
+        main.postDelayed({ if (!closed && !socketConnected) connectSocket() }, (1000L shl reconnectAttempt).coerceAtMost(30000L))
     }
 
     private fun status(message: String) = main.post { onStatus(message) }
